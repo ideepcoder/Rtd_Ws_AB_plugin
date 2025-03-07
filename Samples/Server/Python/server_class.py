@@ -206,8 +206,7 @@ class RTDServer(PubSub):
 
     def some_historical_data( self, jo ):
         '''simulate some historical data'''
-        print(f"jo: {jo}")
-        print("Some historical data")
+        print(f"Some historical data for \n{jo}")
         ## 10:unix timestamp,       // 11:unix millisec timestamp,
         ## 20:"20171215 091500",    // 21:"2017-12-15 09:15:00", // 22:"2017-12-15","09:15:00",
         ## 30:20171215,91500,       // 31: 20171215,0,(EoD)
@@ -295,12 +294,8 @@ class RTDServer(PubSub):
     ## simulate subscribe
     def add_symbol(self, jo ):
         try:
-            print("Adding symbol")
-            print(jo)
             jr = copy.deepcopy(jo )
-            print(f"jr: {jr}")
             sym = jr['arg']
-            print(f"Message: {jr}")
             if sym not in self.addrem_list:
                 self.addrem_list.append( sym )
                 jr['code'] = 200
@@ -308,23 +303,21 @@ class RTDServer(PubSub):
             else:
                 jr['code'] = 400
                 jr['arg']  = sym + " already subcribed"
-
             return json.dumps( jr, separators=(',', ':') )
         except:
             pass
 
     ## simulate unsubscribe
     def rem_symbol(self, jo ):
-        global addrem_list
 
         jr = copy.deepcopy( jo )
         sym = jr['arg']
 
-        if sym not in addrem_list:
+        if sym not in self.addrem_list:
             jr['code'] = 400
             jr['arg']  = sym + " not subscribed"
         else:
-            addrem_list.remove( sym )
+            self.addrem_list.remove( sym )
             jr['code'] = 200
             jr['arg']  = sym + " unsubcribed ok"
 
@@ -364,7 +357,7 @@ class RTDServer(PubSub):
 
                 #data = []
                 ##'n', 'd', 't', 'o', 'h', 'l', 'c', 'v', 'oi', 's','pc','bs','bp','as','ap' (s=total vol, pc=prev day close bs,bp,as,ap=bid ask )
-                self.r = self.r#todo come back to this if we are not getting the random data pulled htrough
+                self.r = self.r
                 data = [{"n": "SYM1", "t":t, "d":d, "c": self.r(1,9), "o": self.r(1,9),     "h": 9, "l": 1,   "v": v1, "oi": 0, "bp": self.r(1, 5), "ap": self.r(5, 9), "s": s1, "bs":1, "as":1, "pc":1, "do":4, "dh":9, "dl":1}
                     , {"n": "", "t":t, "d":d, "c": self.r(10, 19), "o": self.r(10, 19), "h": 19, "l": 10, "v": v2, "oi": 0, "bp": self.r(10, 15), "ap": self.r(15, 19), "s": s2, "pc":10, "do":15, "dh":19, "dl":10}
                     , {"n": "SYM3", "t":t, "d":d, "c": self.r(20, 29), "o": self.r(20, 29), "h": 29, "l": 20, "v": v3, "oi": 0, "bp": self.r(20, 25), "ap": self.r(25, 29), "s": s3, "pc":22, "do":28, "dh":29, "dl":20}]
