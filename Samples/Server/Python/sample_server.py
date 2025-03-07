@@ -57,7 +57,9 @@ stop_threads = False    ## global flag to send term signal
 
 class PubSub:
     def __init__(self):
-        self.waiter = asyncio.Future()
+        loop = asyncio.new_event_loop()
+        self.waiter = loop.create_future()
+
 
     def publish(self, value):
         waiter, self.waiter = self.waiter, asyncio.Future()

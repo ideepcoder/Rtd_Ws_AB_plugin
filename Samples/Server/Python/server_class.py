@@ -45,20 +45,6 @@ import pandas as pd
 import copy
 from queue import Queue, Empty, Full
 
-''' Settings '''
-tf              = 1      ## base time interval in min (periodicity)
-wsport          = 10102  ## Websocket port  10101
-sleepT          = 0.9    ## simulate ticks generated every "n" seconds. SET IN MAIN()
-tCount          = 5      ## incl default 3 tickers, increase maxTicks accordingly
-incSym          = 0      ## set greater than 0, to simulate new quotes by this amount. IF 0, no new tickers added
-maXTicks        = 50     ## maximum concurrent ticks Try 1000 :) no problem
-
-KeepRunning     = True   ## True=Server remains running on client disconnect, False=Server stops on client disconnect
-
-''' Globals '''
-addrem_list = []        ## simulate add and remove symbol command
-
-stop_threads = False    ## global flag to send term signal
 
 
 class PubSub:
@@ -83,7 +69,26 @@ class PubSub:
     __aiter__ = subscribe
 
 
-PUBSUB = PubSub()
+#pubsub = PubSub()
+
+class RTDServer(PubSub):
+    def __init__(self):
+        super().__init__()
+''' Settings '''
+tf              = 1      ## base time interval in min (periodicity)
+wsport          = 10102  ## Websocket port  10102
+sleepT          = 0.9    ## simulate ticks generated every "n" seconds. SET IN MAIN()
+tCount          = 5      ## incl default 3 tickers, increase maxTicks accordingly
+incSym          = 0      ## set greater than 0, to simulate new quotes by this amount. IF 0, no new tickers added
+maXTicks        = 50     ## maximum concurrent ticks Try 1000 :) no problem
+
+KeepRunning     = True   ## True=Server remains running on client disconnect, False=Server stops on client disconnect
+
+''' Globals '''
+addrem_list = []        ## simulate add and remove symbol command
+
+stop_threads = False    ## global flag to send term signal
+
 
 
 ## Proper way is for handler to have 2 task threads for send() and recv(),
@@ -102,7 +107,7 @@ async def handler( websocket ):
     try:
         while( not stop_threads ):
 
-            async for message in PUBSUB:                
+            async for message in pubsub:
                 await websocket.send( message )         ## send broadcast RTD messages
 
             if( stop_threads ):
@@ -314,7 +319,7 @@ def rem_symbol( jo ):
 
 
 async def broadcast( message ):
-    PUBSUB.publish( message )
+    pubsub.publish(message)
 
 
 def r(l=1,u=9): return random.randint(l, u)
