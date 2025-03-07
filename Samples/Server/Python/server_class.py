@@ -28,12 +28,10 @@
 // Any use of this source code must include the above notice, 
 // in the user documentation and internal comments to the code.
 '''
-#Todo Turn this working server into a class
-#This will allow easier creation of multiple objects. (e.g in ccxt)
-#Todo Integrate and parse data from CCXT fetch_ohclv
-#For historic data
+#Todo Create method Integrate and parse data from CCXT fetch_ohclv.
+#For historic data, see what happens when assining to hd_str in some_historic_data
 #Todo Integrate websockets from ccxtpro
-#For RTD data
+#For RTD data. Look at random_generator and decipher the variable assugnments there.
 
 import asyncio
 import websockets
@@ -75,24 +73,22 @@ class RTDServer(PubSub):
         super().__init__()
 
         try:
-            sleepT = float(sys.argv[1])
-            print(f'Frequency={sleepT} secs')
+            sleep_time = float(sys.argv[1])
+            print(f'Frequency={sleep_time} secs')
         except:
-            sleepT = 0.9
-            print(f'Frequency={sleepT} secs')
+            sleep_time = 0.9
+            print(f'Frequency={sleep_time} secs')
 
         ''' Settings '''
-        self.tf              = 1      ## base time interval in min (periodicity)
-        self.wsport          = 10102  ## Websocket port  10102
-        self.sleepT          = sleepT ## simulate ticks generated every "n" seconds. SET IN MAIN()
-        self.tCount          = 5      ## incl default 3 tickers, increase maxTicks accordingly
-        self.incSym          = 0      ## set greater than 0, to simulate new quotes by this amount. IF 0, no new tickers added
-        self.maXTicks        = 50     ## maximum concurrent ticks Try 1000 :) no problem
+        self.timeframe       = 1            ## base time interval in min (periodicity)
+        self.websocket_port  = 10102        ## Websocket port  10102
+        self.sleep_time      = sleep_time   ## simulate ticks generated every "n" seconds. SET IN MAIN()
+        self.ticker_count    = 5            ## incl default 3 tickers, increase maxTicks accordingly
+        self.inc_sym          = 0            ## set greater than 0, to simulate new quotes by this amount. IF 0, no new tickers added
+        self.max_tickers        = 50           ## maximum concurrent ticks Try 1000 :) no problem
 
-        self.KeepRunning     = True   ## True=Server remains running on client disconnect, False=Server stops on client disconnect
-
-        ''' Globals '''
-        self.addrem_list = []        ## simulate add and remove symbol command
+        self.keep_running     = True   ## True=Server remains running on client disconnect, False=Server stops on client disconnect
+        self.add_remove_list = []        ## simulate add and remove symbol command
 
 
 
@@ -120,7 +116,8 @@ class RTDServer(PubSub):
 
         except websockets.ConnectionClosed as wc:
             ## can check reason for close here
-            if not self.KeepRunning: stop_threads = True
+            print(f"Websocket connection in handler: {wc}")
+            if not self.keep_running: stop_threads = True
 
         except ConnectionResetError:    pass
 
@@ -137,57 +134,53 @@ class RTDServer(PubSub):
             while( not self.stop_threads ):
                 try:
                     async with asyncio.timeout(delay=0.3):
-                        print("line 140")
-                        mr = await websocket.recv()
-                        print(mr)
+                        message = await websocket.recv()
                         try:
-                            jo = json.loads( mr )
-                            if 'cmd' in jo:
-                                if 'arg' in jo:
-                                    if jo['cmd']=='bfall':
-                                        print( f"bfall cmd in {mr}")
+                            json_message = json.loads( message )
+                            if 'cmd' in json_message:
+                                if 'arg' in json_message:
+                                    if json_message['cmd']=='bfall':
+                                        print( f"bfall cmd in {message}")
 
-                                    elif jo['cmd'] in ['bfauto', 'bffull']:
-                                        print( f"bfauto cmd in {mr}")
+                                    elif json_message['cmd'] in ['bfauto', 'bffull']:
+                                        print( f"bfauto cmd in {message}")
 
-                                        sym = jo['arg'] if ' ' not in jo['arg'] else (jo['arg'].split(' '))[0]
+                                        sym = json_message['arg'] if ' ' not in json_message['arg'] else (json_message['arg'].split(' '))[0]
 
-                                        jo['arg'] = f"y {sym} 2" if jo['cmd']=='bfauto' else f"y {sym} 5"
+                                        json_message['arg'] = f"y {sym} 2" if json_message['cmd']=='bfauto' else f"y {sym} 5"
                                         print("Bananas")
-                                        await self.broadcast( self.some_historical_data( jo ) )
+                                        await self.broadcast( self.some_historical_data( json_message ) )
 
-                                        jo['sym'] = "addsym";   jo['arg'] = sym
-                                        self.add_symbol( jo )
-                                        print("Line 161")
+                                        json_message['sym'] = "addsym";   json_message['arg'] = sym
+                                        self.add_symbol( json_message )
 
-                                    elif jo['cmd'] == 'bfsym':
-                                        #Sock_send_Q.put( jo )    ## real code should use Queue as buffer, separate thread/async
-                                        ##  jo = {"cmd":"bfsym", "arg":"y SYM1 3 1"}
+                                    elif json_message['cmd'] == 'bfsym':
+                                        #Sock_send_Q.put( json_message )    ## real code should use Queue as buffer, separate thread/async
+                                        ##  json_message = {"cmd":"bfsym", "arg":"y SYM1 3 1"}
                                         print("Apples")
-                                        await self.broadcast( self.some_historical_data( jo ) )
-                                        print( f"sent response\n{jo}" )
+                                        await self.broadcast( self.some_historical_data( json_message ) )
 
-                                    elif jo['cmd'] == "addsym":
+                                    elif json_message['cmd'] == "addsym":
                                         print("Pears") #This flow is when active sym is clicked inthe context menue of the plugin
-                                        jr = self.add_symbol( jo )
+                                        jr = self.add_symbol( json_message )
                                         await self.broadcast( jr )
-                                        print( f"sent response\n{jr}" )
 
-                                    elif jo['cmd'] == "remsym":
+                                    elif json_message['cmd'] == "remsym":
                                         print("oranges")
-                                        jr = self.rem_symbol( jo )
+                                        jr = self.rem_symbol( json_message )
                                         await self.broadcast( self.some_historical_data( jr ) )
-                                        print( f"sent response\n{jr}" )
 
-                                    else:   print( f"unknown cmd in {mr}")
+                                    else:
+                                        print( f"unknown cmd in {message}")
 
-                                else:   print( f"arg not found in {mr}")
+                                else:
+                                    print( f"arg not found in {message}")
 
-                            else:   print( f"jo={mr}")
+                            else:
+                                print( f"json_message={message}")
 
                         except ValueError as e:
-                            #print(e)       ## if not JSON
-                            print( mr )
+                            print(f"Value error from {message}\n{e}")
 
                     if self.stop_threads:
                         raise websockets.ConnectionClosed( None, None )
@@ -195,25 +188,24 @@ class RTDServer(PubSub):
                 except TimeoutError: pass
 
         except websockets.ConnectionClosed as wc:
-            print(f"Connection close: {wc}")
-            if not self.KeepRunning: self.stop_threads = True
-
+            print(f"Connection closed: {wc}")
+            if not self.keep_running:
+                self.stop_threads = True
         except Exception as e:
             return repr(e)
-
         return
 
 
-    def some_historical_data( self, jo ):
+    def some_historical_data(self, json_message):
         '''simulate some historical data'''
-        print(f"Some historical data for \n{jo}")
+        print(f"Some historical data for \n{json_message}")
         ## 10:unix timestamp,       // 11:unix millisec timestamp,
         ## 20:"20171215 091500",    // 21:"2017-12-15 09:15:00", // 22:"2017-12-15","09:15:00",
         ## 30:20171215,91500,       // 31: 20171215,0,(EoD)
         DtFormat = 30   ## {unix: 10, 11,} {str:20, 21, 22,} {int: 30(default), }
 
         try:
-            t:str = jo['arg']
+            t:str = json_message['arg']
             t = t.split(' ')        ## reserved1 symbol_name date_from date_to timeframe ## to-do: make a json standard format
 
             ## SAMPLE using DF, how to mainpulate type etc
@@ -273,8 +265,8 @@ class RTDServer(PubSub):
                 j = 0
                 while j < BarsPerDay:
 
-                    jsWs['bars'].append( [ int( dt.strftime('%Y%m%d') ), int( dt.strftime('%H%M00') ),
-                        20+self.r(),40-self.r(),10+self.r(),18+self.r(),100+self.r(100,500),0] )
+                    jsWs['bars'].append([int( dt.strftime('%Y%m%d') ), int( dt.strftime('%H%M00') ),
+                                         20 + self.random_generator(), 40 - self.random_generator(), 10 + self.random_generator(), 18 + self.random_generator(), 100 + self.random_generator(100, 500), 0])
 
                     ## Unix time example, change format string above [use u = localtime() or g=gmtime() c++]
                     #jsWs['bars'].append( [ int( dt.timestamp()), 20+r(),40-r(),10+r(),18+r(),100+r(100,500),0] )
@@ -292,42 +284,42 @@ class RTDServer(PubSub):
 
 
     ## simulate subscribe
-    def add_symbol(self, jo ):
+    def add_symbol(self, json_message):
         try:
-            jr = copy.deepcopy(jo )
-            sym = jr['arg']
-            if sym not in self.addrem_list:
-                self.addrem_list.append( sym )
-                jr['code'] = 200
-                jr['arg']  = sym + " subscribed ok"
+            json_copy = copy.deepcopy(json_message)
+            sym = json_copy['arg']
+            if sym not in self.add_remove_list:
+                self.add_remove_list.append(sym)
+                json_copy['code'] = 200
+                json_copy['arg']  = sym + " subscribed ok"
             else:
-                jr['code'] = 400
-                jr['arg']  = sym + " already subcribed"
-            return json.dumps( jr, separators=(',', ':') )
+                json_copy['code'] = 400
+                json_copy['arg']  = sym + " already subcribed"
+            return json.dumps( json_copy, separators=(',', ':') )
         except:
             pass
 
     ## simulate unsubscribe
-    def rem_symbol(self, jo ):
+    def rem_symbol(self, json_message):
 
-        jr = copy.deepcopy( jo )
-        sym = jr['arg']
+        json_copy = copy.deepcopy(json_message)
+        sym = json_copy['arg']
 
-        if sym not in self.addrem_list:
-            jr['code'] = 400
-            jr['arg']  = sym + " not subscribed"
+        if sym not in self.add_remove_list:
+            json_copy['code'] = 400
+            json_copy['arg']  = sym + " not subscribed"
         else:
-            self.addrem_list.remove( sym )
-            jr['code'] = 200
-            jr['arg']  = sym + " unsubcribed ok"
+            self.add_remove_list.remove(sym)
+            json_copy['code'] = 200
+            json_copy['arg']  = sym + " unsubcribed ok"
 
-        return json.dumps( jr, separators=(',', ':') )
+        return json.dumps( json_copy, separators=(',', ':') )
 
 
     async def broadcast(self, message ):
         self.publish(message)
 
-    def r(self,l=1,u=9): return random.randint(l, u)
+    def random_generator(self, l=1, u=9): return random.randint(l, u)
 
 
     async def broadcast_messages_count(self):
@@ -336,20 +328,20 @@ class RTDServer(PubSub):
         pTm = 0
         try:
             while not self.stop_threads:
-                await asyncio.sleep( self.sleepT )    #simulate ticks in seconds
+                await asyncio.sleep(self.sleep_time)    #simulate ticks in seconds
 
                 dt   = datetime.datetime.now()
 
-                t    = dt.hour*10000 + int( dt.minute/self.tf )*self.tf*100
+                t    = dt.hour * 10000 + int(dt.minute / self.timeframe) * self.timeframe * 100
                 d    = int( dt.strftime('%Y%m%d') )
 
 
                 if( pTm != t):
-                    v1 =self.r(3,5); v2 =self.r(2,3); v3 =self.r(1,2); pTm = t;                    # bar vol reset
-                    if( self.incSym and self.tCount <= self.maXTicks):
-                        self.tCount += 1; print(self.tCount)
+                    v1 =self.random_generator(3, 5); v2 =self.random_generator(2, 3); v3 =self.random_generator(1, 2); pTm = t;                    # bar vol reset
+                    if( self.inc_sym and self.ticker_count <= self.max_tickers):
+                        self.ticker_count += 1; print(self.ticker_count)
 
-                else:   v1+=self.r(3,5); v2+=self.r(2,3); v3+=self.r(1,2)                          # bar vol cum
+                else:   v1+=self.random_generator(3, 5); v2+=self.random_generator(2, 3); v3+=self.random_generator(1, 2)                          # bar vol cum
 
                 s1+=v1; s2+=v2; s3+=v3                #total vol
 
@@ -357,21 +349,21 @@ class RTDServer(PubSub):
 
                 #data = []
                 ##'n', 'd', 't', 'o', 'h', 'l', 'c', 'v', 'oi', 's','pc','bs','bp','as','ap' (s=total vol, pc=prev day close bs,bp,as,ap=bid ask )
-                self.r = self.r
-                data = [{"n": "SYM1", "t":t, "d":d, "c": self.r(1,9), "o": self.r(1,9),     "h": 9, "l": 1,   "v": v1, "oi": 0, "bp": self.r(1, 5), "ap": self.r(5, 9), "s": s1, "bs":1, "as":1, "pc":1, "do":4, "dh":9, "dl":1}
-                    , {"n": "", "t":t, "d":d, "c": self.r(10, 19), "o": self.r(10, 19), "h": 19, "l": 10, "v": v2, "oi": 0, "bp": self.r(10, 15), "ap": self.r(15, 19), "s": s2, "pc":10, "do":15, "dh":19, "dl":10}
-                    , {"n": "SYM3", "t":t, "d":d, "c": self.r(20, 29), "o": self.r(20, 29), "h": 29, "l": 20, "v": v3, "oi": 0, "bp": self.r(20, 25), "ap": self.r(25, 29), "s": s3, "pc":22, "do":28, "dh":29, "dl":20}]
+                self.random_generator = self.random_generator
+                data = [{"n": "SYM1", "t":t, "d":d, "c": self.random_generator(1, 9), "o": self.random_generator(1, 9), "h": 9, "l": 1, "v": v1, "oi": 0, "bp": self.random_generator(1, 5), "ap": self.random_generator(5, 9), "s": s1, "bs":1, "as":1, "pc":1, "do":4, "dh":9, "dl":1}
+                    , {"n": "", "t":t, "d":d, "c": self.random_generator(10, 19), "o": self.random_generator(10, 19), "h": 19, "l": 10, "v": v2, "oi": 0, "bp": self.random_generator(10, 15), "ap": self.random_generator(15, 19), "s": s2, "pc":10, "do":15, "dh":19, "dl":10}
+                    , {"n": "SYM3", "t":t, "d":d, "c": self.random_generator(20, 29), "o": self.random_generator(20, 29), "h": 29, "l": 20, "v": v3, "oi": 0, "bp": self.random_generator(20, 25), "ap": self.random_generator(25, 29), "s": s3, "pc":22, "do":28, "dh":29, "dl":20}]
 
                 ## Random symbol generator code
                 k = 4
-                while k <= min( self.tCount, self.maXTicks):
-                    rec = {"n": "SYM"+str(k), "t":t, "d":d, "c": 18 + self.r(), "o": 20 + self.r(), "h": 40 - self.r(), "l": 10 + self.r(), "v": v1, "oi": 0, "bp": self.r(1, 5), "ap": self.r(5, 9), "s": s1, "bs":1, "as":1, "pc":1, "do":20, "dh":40, "dl":10}
+                while k <= min(self.ticker_count, self.max_tickers):
+                    rec = {"n": "SYM"+str(k), "t":t, "d":d, "c": 18 + self.random_generator(), "o": 20 + self.random_generator(), "h": 40 - self.random_generator(), "l": 10 + self.random_generator(), "v": v1, "oi": 0, "bp": self.random_generator(1, 5), "ap": self.random_generator(5, 9), "s": s1, "bs":1, "as":1, "pc":1, "do":20, "dh":40, "dl":10}
                     data.append( rec )
                     k +=1
 
                 ## make ticks for subscribed symbols
-                for asym in self.addrem_list:
-                    rec = {"n": asym, "t":t, "d":d, "c": 18 + self.r(), "o": 20 + self.r(), "h": 40 - self.r(), "l": 10 + self.r(), "v": v1, "oi": 0, "bp": self.r(1, 5), "ap": self.r(5, 9), "s": s1, "bs":1, "as":1, "pc":1, "do":20, "dh":40, "dl":10}
+                for asym in self.add_remove_list:
+                    rec = {"n": asym, "t":t, "d":d, "c": 18 + self.random_generator(), "o": 20 + self.random_generator(), "h": 40 - self.random_generator(), "l": 10 + self.random_generator(), "v": v1, "oi": 0, "bp": self.random_generator(1, 5), "ap": self.random_generator(5, 9), "s": s1, "bs":1, "as":1, "pc":1, "do":20, "dh":40, "dl":10}
                     data.append( rec )
 
                 #print( json.dumps( data, separators=(',', ':')) )
@@ -391,7 +383,7 @@ class RTDServer(PubSub):
 
 
     async def start_ws_server( self,aport ):
-        print( f"Started RTD server: port={aport}, tf={self.tf}min, sym_count={self.tCount}, increment_sym={self.incSym}" )
+        print( f"Started RTD server: port={aport}, tf={self.timeframe}min, sym_count={self.ticker_count}, increment_sym={self.inc_sym}")
 
         async with websockets.serve(self.handler, "localhost", aport ):
             await self.broadcast_messages_count()
@@ -401,16 +393,13 @@ class RTDServer(PubSub):
 
 async def main():
     server = RTDServer()
-    await asyncio.gather(server.start_ws_server(server.wsport))
+    await asyncio.gather(server.start_ws_server(server.websocket_port))
 
 if __name__ == "__main__":
     try:
         print(f"###  press ctrl+c to exit  ###")
-        
         asyncio.run( main() )
-        
         print(f"Exit 0")
-
     except KeyboardInterrupt:
         print(f"Kill signal, Exit 1")
         stop_threads = True
