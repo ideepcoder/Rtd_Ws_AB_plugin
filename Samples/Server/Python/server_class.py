@@ -13,19 +13,19 @@
 // https://github.com/ideepcoder/Rtd_Ws_AB_plugin/
 // https://forum.amibroker.com/u/nsm51/summary
 //
-// Users and possessors of this source code are hereby granted a nonexclusive, 
+// Users and possessors of this source code are hereby granted a nonexclusive,
 // royalty-free copyright license to use this code in individual and commercial software.
 //
-// AUTHOR ( NSM51 ) MAKES NO REPRESENTATION ABOUT THE SUITABILITY OF THIS SOURCE CODE FOR ANY PURPOSE. 
-// IT IS PROVIDED "AS IS" WITHOUT EXPRESS OR IMPLIED WARRANTY OF ANY KIND. 
-// AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOURCE CODE, 
-// INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. 
-// IN NO EVENT SHALL AUTHOR BE LIABLE FOR ANY SPECIAL, INDIRECT, INCIDENTAL, OR 
-// CONSEQUENTIAL DAMAGES, OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, 
-// WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, 
+// AUTHOR ( NSM51 ) MAKES NO REPRESENTATION ABOUT THE SUITABILITY OF THIS SOURCE CODE FOR ANY PURPOSE.
+// IT IS PROVIDED "AS IS" WITHOUT EXPRESS OR IMPLIED WARRANTY OF ANY KIND.
+// AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOURCE CODE,
+// INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+// IN NO EVENT SHALL AUTHOR BE LIABLE FOR ANY SPECIAL, INDIRECT, INCIDENTAL, OR
+// CONSEQUENTIAL DAMAGES, OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+// WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
 // ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOURCE CODE.
-// 
-// Any use of this source code must include the above notice, 
+//
+// Any use of this source code must include the above notice,
 // in the user documentation and internal comments to the code.
 '''
 #Todo Create method Integrate and parse data from CCXT fetch_ohclv.
@@ -41,9 +41,14 @@ import random
 import sys
 import pandas as pd
 import copy
+import os
+import ccxt.pro as ccxtpro
+import logging
+import datetime
+import pytz
 from queue import Queue, Empty, Full
 
-
+#logging.basicConfig(level=logging.DEBUG)
 
 class PubSub:
     def __init__(self):
@@ -62,11 +67,8 @@ class PubSub:
 
     def __del__(self):
         return
-    
+
     __aiter__ = subscribe
-
-
-
 
 class RTDServer(PubSub):
     def __init__(self):
@@ -90,8 +92,24 @@ class RTDServer(PubSub):
         self.keep_running     = True   ## True=Server remains running on client disconnect, False=Server stops on client disconnect
         self.add_remove_list = []        ## simulate add and remove symbol command
 
+        self.timezone = pytz.timezone('Australia/Perth')
+
+        self.database = "CryptoLive"
+        self.databases_path = "C:\\Program Files\\AmiBroker\\Databases\\"
+        self.watchlists_path = os.path.join(self.databases_path,self.database,"WatchLists")
+        self.watchlist_suffix = ".tls"
 
 
+        self.exchange_instances = {
+            "binance": ccxtpro.binance(),
+            "bybit": ccxtpro.bybit(),
+            "coinbase": ccxtpro.coinbase(),
+            "okx": ccxtpro.okx(),
+            "mexc":ccxtpro.mexc(),
+            "kucoin":ccxtpro.kucoin(),
+            "gateio":ccxtpro.gateio(),
+            "kraken":ccxtpro.kraken()
+        }
 
 
     ## Proper way is for handler to have 2 task threads for send() and recv(),
@@ -124,7 +142,6 @@ class RTDServer(PubSub):
         print(f"client disconnected")
         return
 
-
     ## Recv() is blocking while processing
     ## in production, push requests to Queue and process asynchronously
     ## should not block or use same thread to process requests
@@ -133,8 +150,10 @@ class RTDServer(PubSub):
         try:
             while( not self.stop_threads ):
                 try:
-                    async with asyncio.timeout(delay=0.3):
+                    async with asyncio.timeout(3):
+                        print("Looped round")
                         message = await websocket.recv()
+                        print(message)
                         try:
                             json_message = json.loads( message )
                             if 'cmd' in json_message:
@@ -143,15 +162,15 @@ class RTDServer(PubSub):
                                         print( f"bfall cmd in {message}")
 
                                     elif json_message['cmd'] in ['bfauto', 'bffull']:
-                                        print( f"bfauto cmd in {message}")
-
-                                        sym = json_message['arg'] if ' ' not in json_message['arg'] else (json_message['arg'].split(' '))[0]
-
-                                        json_message['arg'] = f"y {sym} 2" if json_message['cmd']=='bfauto' else f"y {sym} 5"
                                         print("Bananas")
-                                        await self.broadcast( self.some_historical_data( json_message ) )
-
-                                        json_message['sym'] = "addsym";   json_message['arg'] = sym
+                                        print( f"bfauto or bffull\n {json_message}\ndata type: {type(json_message)}")
+                                        sym = json_message['arg'] if ' ' not in json_message['arg'] else (json_message['arg'].split(' '))[0]
+                                        json_message['arg'] = f"y {sym} 2" if json_message['cmd']=='bfauto' else f"y {sym} 5"
+                                        #await self.broadcast( self.some_historical_data( json_message ) )
+                                        await self.get_historic_data(json_message)
+                                        print(f"moved past the get historic data")
+                                        json_message['sym'] = "addsym"
+                                        json_message['arg'] = sym
                                         self.add_symbol( json_message )
 
                                     elif json_message['cmd'] == 'bfsym':
@@ -277,7 +296,9 @@ class RTDServer(PubSub):
                 dt = dt + datetime.timedelta( days=1 )
                 i += 1
             print("Line 287")
-            return json.dumps( jsWs, separators=(',', ':') )    ## remove space else plugin will not match str
+            jsws_json = json.dumps( jsWs, separators=(',', ':') )    ## remove space else plugin will not match str
+            print(jsws_json, f"Data type: {type(jsws_json)}")
+            return jsws_json
 
         except Exception as e:
             return repr(e)
@@ -315,7 +336,6 @@ class RTDServer(PubSub):
 
         return json.dumps( json_copy, separators=(',', ':') )
 
-
     async def broadcast(self, message ):
         self.publish(message)
 
@@ -329,12 +349,10 @@ class RTDServer(PubSub):
         try:
             while not self.stop_threads:
                 await asyncio.sleep(self.sleep_time)    #simulate ticks in seconds
-
                 dt   = datetime.datetime.now()
 
                 t    = dt.hour * 10000 + int(dt.minute / self.timeframe) * self.timeframe * 100
                 d    = int( dt.strftime('%Y%m%d') )
-
 
                 if( pTm != t):
                     v1 =self.random_generator(3, 5); v2 =self.random_generator(2, 3); v3 =self.random_generator(1, 2); pTm = t;                    # bar vol reset
@@ -342,11 +360,9 @@ class RTDServer(PubSub):
                         self.ticker_count += 1; print(self.ticker_count)
 
                 else:   v1+=self.random_generator(3, 5); v2+=self.random_generator(2, 3); v3+=self.random_generator(1, 2)                          # bar vol cum
-
                 s1+=v1; s2+=v2; s3+=v3                #total vol
 
                 ## Open intentionally kept random, SYM2 test bad symbol
-
                 #data = []
                 ##'n', 'd', 't', 'o', 'h', 'l', 'c', 'v', 'oi', 's','pc','bs','bp','as','ap' (s=total vol, pc=prev day close bs,bp,as,ap=bid ask )
                 self.random_generator = self.random_generator
@@ -370,8 +386,8 @@ class RTDServer(PubSub):
                 await self.broadcast( json.dumps( data, separators=(',', ':')))  ## remove space else plugin will not match str
 
         except asyncio.CancelledError:  #raised when asyncio receives SIGINT from KB_Interrupt
-            self.stop_threads = True
             print(f"asyncio tasks: send stop signal, wait for exit...")
+            self.stop_threads = True
             #try:
             #    await asyncio.get_running_loop().shutdown_asyncgens()
             #except RuntimeError: pass
@@ -381,19 +397,107 @@ class RTDServer(PubSub):
             except: pass
 
 
-
     async def start_ws_server( self,aport ):
         print( f"Started RTD server: port={aport}, tf={self.timeframe}min, sym_count={self.ticker_count}, increment_sym={self.inc_sym}")
-
         async with websockets.serve(self.handler, "localhost", aport ):
+            print("In start_ws")
             await self.broadcast_messages_count()
+
 
         return
 
+    async def load_exchanges(self):
+        tasks = [exchange.load_markets() for exchange in self.exchange_instances.values()]
+        await asyncio.gather(*tasks)  # Run all load_markets() calls concurrently
+
+    async def close_exchanges(self):
+        tasks = [exchange.close() for exchange in self.exchange_instances.values()]
+        await asyncio.gather(*tasks)  # Run all load_markets() calls concurrently
+
+    async def fetch_market_watchlists(self, name, exchange):
+        print(f"Fetching market data for {name}...")
+        try:
+            watchlist = os.path.join(self.watchlists_path, name + self.watchlist_suffix)
+            market = await exchange.fetch_markets()
+            df = pd.DataFrame(market)
+            df_active = df[
+                (df['active']==True) &
+                (df['type'] == "spot")
+            ]
+            df_symlist = df_active['symbol'] + f"{name}"
+            for i in range(len(df_symlist)):
+                sym = df_symlist.iloc[0][i]
+                self.add_symbol_from_df()
+            print(df_symlist.to_string())
+            df_symlist.to_csv(watchlist,index = False, header=None, mode = "w")
+            await exchange.close()
+        except Exception as e:
+            print(f"Error fetching data for {name}: {e}")
+
+    async def create_watchlists(self):
+        tasks = [self.fetch_market_watchlists(name, exchange) for name, exchange in self.exchange_instances.items()]
+        await asyncio.gather(*tasks)
+
+    async def get_historic_data(self, json_message):
+        #Todo logic to handle parsing of crypto vs non crypt data
+        # Do soemthing like if not somesubstring found in exchangeList continue, etc
+        print("Json message in get historic data")
+        print(f"message: {json_message}\tdata type: {type(json_message)}")
+        if ' ' not in json_message['arg']:
+            symbol_and_exchange = json_message['arg']
+        else:
+            argument = json_message['arg']
+            symbol_and_exchange = argument.split(' ')[1]
+
+        for exchange_name in self.exchange_instances.keys():
+            if not exchange_name in symbol_and_exchange:
+                continue
+            else:
+                exchange = self.exchange_instances[exchange_name.lower()]
+                symbol = symbol_and_exchange.split(exchange_name)[0]
+                break
+        try:
+            data = await exchange.fetch_ohlcv(
+                                                symbol=symbol,
+                                                timeframe = "1m"
+                                                )
+            formatted_data = [
+                [
+                    int((datetime.datetime.utcfromtimestamp(row[0] // 1000)
+                         .replace(tzinfo=pytz.utc)  # Set timezone to UTC
+                         .astimezone(self.timezone)  # Convert to Perth time
+                         .strftime("%Y%m%d"))),  # Date as integer (YYYYMMDD)
+
+                    int(datetime.datetime.utcfromtimestamp(row[0] // 1000)
+                        .replace(tzinfo=pytz.utc)  # Set timezone to UTC
+                        .astimezone(self.timezone)  # Convert to Perth time
+                        .strftime("%H%M%S")),  # Time as integer (HHMMSS)
+
+                    *row[1:],  # OHLCV values
+                    0  # Extra 0 at the end
+                ]
+                for row in data
+            ]
+
+            json_dict = {"hist":f"{symbol_and_exchange}","format":"dtohlcvi"}
+            json_dict['bars'] = formatted_data
+            json_string = json.dumps(json_dict)
+            await self.broadcast(json_string)
+
+
+        except Exception as e:
+            print(e)
+
+
 
 async def main():
+    print("Creating server")
     server = RTDServer()
+    print("Loading exchanges")
+    await server.load_exchanges()
+    print("Exchanges loaded")
     await asyncio.gather(server.start_ws_server(server.websocket_port))
+    await server.close_exchanges()
 
 if __name__ == "__main__":
     try:
