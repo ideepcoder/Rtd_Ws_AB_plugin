@@ -145,6 +145,22 @@ class RTDServer(PubSub):
     ## in production, push requests to Queue and process asynchronously
     ## should not block or use same thread to process requests
 
+    async def subscribe_to_exchange_websocket(self, symbol_and_exchange):
+        for exchange_name in self.exchange_instances.keys():
+            if not exchange_name in symbol_and_exchange:
+                continue
+            else:
+                exchange = self.exchange_instances[exchange_name.lower()]
+                symbol = symbol_and_exchange.split(exchange_name)[0]
+                break
+        while not self.stop_threads:
+            print(f"Symbol: {symbol}\n"
+                  f"Exchange: {exchange}\tType: {type(exchange)}")
+            await asyncio.sleep(10)
+            print(f"Some data returned from the {exchange}...")
+            print("appending raw data to list for parsing")
+
+
     async def recv(self, websocket ):
         try:
             while( not self.stop_threads ):
@@ -215,6 +231,8 @@ class RTDServer(PubSub):
             sym = json_copy['arg']
             if sym not in self.websocket_subscription_list:
                 self.websocket_subscription_list.append(sym)
+                symbol_and_exchange = sym
+                asyncio.create_task(self.subscribe_to_exchange_websocket(symbol_and_exchange))
                 json_copy['code'] = 200
                 json_copy['arg']  = sym + " subscribed ok"
             else:
@@ -309,13 +327,75 @@ class RTDServer(PubSub):
                 await asyncio.get_running_loop().stop()           # unrecco = asyncio.get_event_loop().stop()
             except: pass
 
+    async def broadcast_messages_count2(self):
+        try:
+            while not self.stop_threads:
+                await asyncio.sleep(self.sleep_time)    #simulate ticks in seconds
+                t = 100000
+                d= 20250803
+                v1 = v2 = v3 = 0
+                s1 = s2 = s3 = 0
+                """
+                ## Open intentionally kept random, SYM2 test bad symbol
+                #data = []
+                ##'n', 'd', 't', 'o', 'h', 'l', 'c', 'v', 'oi', 's','pc','bs','bp','as','ap' (s=total vol, pc=prev day close bs,bp,as,ap=bid ask )
+                self.random_generator = self.random_generator
+                data = [
+                        {
+                        "n": "SYM1",
+                        "t":t,
+                         "d":d,
+                         "c": self.random_generator(1, 9),
+                         "o": self.random_generator(1, 9),
+                         "h": 9,
+                         "l": 1,
+                         "v": v1,
+                         "oi": 0,
+                         "bp": self.random_generator(1, 5),
+                         "ap": self.random_generator(5, 9),
+                         "s": s1,
+                         "bs":1,
+                         "as":1,
+                         "pc":1,
+                         "do":4,
+                         "dh":9,
+                         "dl":1
+                        },
+                    {"n": "", "t":t, "d":d, "c": self.random_generator(10, 19), "o": self.random_generator(10, 19), "h": 19, "l": 10, "v": v2, "oi": 0, "bp": self.random_generator(10, 15), "ap": self.random_generator(15, 19), "s": s2, "pc":10, "do":15, "dh":19, "dl":10},
+                    {"n": "SYM3", "t":t, "d":d, "c": self.random_generator(20, 29), "o": self.random_generator(20, 29), "h": 29, "l": 20, "v": v3, "oi": 0, "bp": self.random_generator(20, 25), "ap": self.random_generator(25, 29), "s": s3, "pc":22, "do":28, "dh":29, "dl":20}
+                ]
+
+                ## Random symbol generator code
+                k = 4
+                while k <= min(self.ticker_count, self.max_tickers):
+                    rec = {"n": "SYM"+str(k), "t":t, "d":d, "c": 18 + self.random_generator(), "o": 20 + self.random_generator(), "h": 40 - self.random_generator(), "l": 10 + self.random_generator(), "v": v1, "oi": 0, "bp": self.random_generator(1, 5), "ap": self.random_generator(5, 9), "s": s1, "bs":1, "as":1, "pc":1, "do":20, "dh":40, "dl":10}
+                    data.append( rec )
+                    k +=1
+
+                ## make ticks for subscribed symbols
+                for asym in self.websocket_subscription_list:
+                    rec = {"n": asym, "t":t, "d":d, "c": 18 + self.random_generator(), "o": 20 + self.random_generator(), "h": 40 - self.random_generator(), "l": 10 + self.random_generator(), "v": v1, "oi": 0, "bp": self.random_generator(1, 5), "ap": self.random_generator(5, 9), "s": s1, "bs":1, "as":1, "pc":1, "do":20, "dh":40, "dl":10}
+                    data.append( rec )
+
+                #print( json.dumps( data, separators=(',', ':')) )
+                await self.broadcast( json.dumps( data, separators=(',', ':')))  ## remove space else plugin will not match str
+                """
+
+        except asyncio.CancelledError:  #raised when asyncio receives SIGINT from KB_Interrupt
+            print(f"asyncio tasks: send stop signal, wait for exit...")
+            self.stop_threads = True
+            #try:
+            #    await asyncio.get_running_loop().shutdown_asyncgens()
+            #except RuntimeError: pass
+            try:
+                await asyncio.sleep( 3 )                          # these are not graceful exits.
+                await asyncio.get_running_loop().stop()           # unrecco = asyncio.get_event_loop().stop()
+            except: pass
 
     async def start_ws_server( self,aport ):
         print( f"Started RTD server: port={aport}, tf={self.timeframe}min, sym_count={self.ticker_count}, increment_sym={self.inc_sym}")
         async with websockets.serve(self.handler, "localhost", aport ):
-            await self.broadcast_messages_count()
-
-
+            await self.broadcast_messages_count2()
         return
 
     async def load_exchanges(self):
