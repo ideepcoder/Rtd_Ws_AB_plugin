@@ -119,13 +119,11 @@ class RTDServer(PubSub):
 
     async def handler(self, websocket ):
         print(f"client connected")
-
         asyncio.create_task( self.recv( websocket ) )
 
         ## Send() task within handler
         try:
             while( not self.stop_threads ):
-
                 async for message in self:
                     await websocket.send( message )         ## send broadcast RTD messages
 
@@ -151,9 +149,8 @@ class RTDServer(PubSub):
             while( not self.stop_threads ):
                 try:
                     async with asyncio.timeout(3):
-                        print("Looped round")
                         message = await websocket.recv()
-                        print(message)
+                        print(f"Message from websocket: {message}")
                         try:
                             json_message = json.loads( message )
                             if 'cmd' in json_message:
@@ -163,12 +160,11 @@ class RTDServer(PubSub):
 
                                     elif json_message['cmd'] in ['bfauto', 'bffull']:
                                         print("Bananas")
-                                        print( f"bfauto or bffull\n {json_message}\ndata type: {type(json_message)}")
                                         sym = json_message['arg'] if ' ' not in json_message['arg'] else (json_message['arg'].split(' '))[0]
                                         json_message['arg'] = f"y {sym} 2" if json_message['cmd']=='bfauto' else f"y {sym} 5"
                                         #await self.broadcast( self.some_historical_data( json_message ) )
                                         await self.get_historic_data(json_message)
-                                        print(f"moved past the get historic data")
+
                                         json_message['sym'] = "addsym"
                                         json_message['arg'] = sym
                                         self.add_symbol( json_message )
@@ -177,7 +173,8 @@ class RTDServer(PubSub):
                                         #Sock_send_Q.put( json_message )    ## real code should use Queue as buffer, separate thread/async
                                         ##  json_message = {"cmd":"bfsym", "arg":"y SYM1 3 1"}
                                         print("Apples")
-                                        await self.broadcast( self.some_historical_data( json_message ) )
+                                        await self.get_historic_data(json_message)
+                                        #await self.broadcast( self.some_historical_data( json_message ) )
 
                                     elif json_message['cmd'] == "addsym":
                                         print("Pears") #This flow is when active sym is clicked inthe context menue of the plugin
@@ -187,7 +184,7 @@ class RTDServer(PubSub):
                                     elif json_message['cmd'] == "remsym":
                                         print("oranges")
                                         jr = self.rem_symbol( json_message )
-                                        await self.broadcast( self.some_historical_data( jr ) )
+                                        #await self.broadcast( self.some_historical_data( jr ) )
 
                                     else:
                                         print( f"unknown cmd in {message}")
@@ -400,7 +397,6 @@ class RTDServer(PubSub):
     async def start_ws_server( self,aport ):
         print( f"Started RTD server: port={aport}, tf={self.timeframe}min, sym_count={self.ticker_count}, increment_sym={self.inc_sym}")
         async with websockets.serve(self.handler, "localhost", aport ):
-            print("In start_ws")
             await self.broadcast_messages_count()
 
 
@@ -441,8 +437,6 @@ class RTDServer(PubSub):
     async def get_historic_data(self, json_message):
         #Todo logic to handle parsing of crypto vs non crypt data
         # Do soemthing like if not somesubstring found in exchangeList continue, etc
-        print("Json message in get historic data")
-        print(f"message: {json_message}\tdata type: {type(json_message)}")
         if ' ' not in json_message['arg']:
             symbol_and_exchange = json_message['arg']
         else:
@@ -478,7 +472,6 @@ class RTDServer(PubSub):
                 ]
                 for row in data
             ]
-
             json_dict = {"hist":f"{symbol_and_exchange}","format":"dtohlcvi"}
             json_dict['bars'] = formatted_data
             json_string = json.dumps(json_dict)
