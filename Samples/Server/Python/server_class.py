@@ -48,7 +48,7 @@ import datetime
 import pytz
 from queue import Queue, Empty, Full
 
-#logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG, filename="logs.txt", filemode="a")
 
 class PubSub:
     def __init__(self):
@@ -90,7 +90,9 @@ class RTDServer(PubSub):
         self.max_tickers        = 50           ## maximum concurrent ticks Try 1000 :) no problem
 
         self.keep_running     = True   ## True=Server remains running on client disconnect, False=Server stops on client disconnect
+
         self.websocket_subscription_list = []        ## simulate add and remove symbol command
+        self.websocket_data_list = []
 
         self.timezone = pytz.timezone('Australia/Perth')
 
@@ -111,7 +113,6 @@ class RTDServer(PubSub):
             "kraken":ccxtpro.kraken()
         }
 
-        self.websocket_data_list = []
 
     ## Proper way is for handler to have 2 task threads for send() and recv(),
     # in this case Handler thread work for sending.
@@ -146,6 +147,15 @@ class RTDServer(PubSub):
     ## should not block or use same thread to process requests
 
     async def subscribe_to_exchange_websocket(self, symbol_and_exchange):
+        print(f"Determining symbol and exchange: {symbol_and_exchange}")
+        try:
+            symbol_and_exchange = symbol_and_exchange.split()
+            if len(symbol_and_exchange) > 1:
+                symbol_and_exchange = symbol_and_exchange[1]
+        except: pass
+        print(f"Parsed value: {symbol_and_exchange}")
+        symbol = None
+        exchange = None
         for exchange_name in self.exchange_instances.keys():
             if not exchange_name in symbol_and_exchange:
                 continue
@@ -153,78 +163,144 @@ class RTDServer(PubSub):
                 exchange = self.exchange_instances[exchange_name.lower()]
                 symbol = symbol_and_exchange.split(exchange_name)[0]
                 break
-        while not self.stop_threads:
-            print(f"Symbol: {symbol}\n"
-                  f"Exchange: {exchange}\tType: {type(exchange)}")
-            await asyncio.sleep(10)
-            print(f"Some data returned from the {exchange}...")
-            print("appending raw data to list for parsing")
+        print(f"Subscribing to websocket for {symbol_and_exchange}")
 
+        current_candle = asyncio.create_task(exchange.fetch_ohlcv(symbol=symbol, timeframe="1m", limit=1))
+        current_ticker_vals = asyncio.create_task(exchange.fetch_ticker(symbol=symbol))
+
+        # Wait for both tasks to complete and get the results
+        candle_data, ticker_data = await asyncio.gather(current_candle, current_ticker_vals)
+        open_price = candle_data[0][1]
+        high_price = candle_data[0][2]
+        low_price = candle_data[0][3]
+        volume = candle_data[0][5]
+
+        prior_cumulative_volume = ticker_data['baseVolume']
+        last_minute = datetime.datetime.utcnow().minute
+        while True:
+            data_list = []
+            data = await exchange.watch_ticker(symbol=symbol)
+            timestamp = data['timestamp']
+            date_string = datetime.datetime.fromtimestamp(timestamp / 1000).strftime("%Y%m%d")
+            time_string = datetime.datetime.fromtimestamp(timestamp / 1000).strftime("%H%M%S")
+
+            dt_object = datetime.datetime.utcfromtimestamp(timestamp / 1000)
+            current_minute = dt_object.minute
+
+            last_price = data['last']
+            daily_vol = data['baseVolume']
+            current_increment = abs(daily_vol - prior_cumulative_volume)
+            prior_cumulative_volume = daily_vol
+            volume += current_increment
+            if current_minute != last_minute:
+                last_minute = current_minute  # Update minute tracker
+                volume = current_increment
+                open_price = high_price = low_price = last_price
+
+            volume = round(volume, 5)
+            high_price = max(high_price, last_price)
+            low_price = min(low_price, last_price)
+
+            bid_price = data['bid']
+            ask_price = data['ask']
+            bid_volume = data['bidVolume']
+            ask_volume = data['askVolume']
+            open_price = open_price
+            high_price = high_price
+            low_price = low_price
+            day_high = data['high']
+            day_low = data['low']
+            day_open = data['open']
+            prev_close = data['previousClose']
+
+            rtd = {
+                "n": symbol_and_exchange,
+                "t": time_string,
+                "d": date_string,
+                "c": last_price,
+                "o": open_price,
+                "h": high_price,
+                "l": low_price,
+                "v": volume,
+                "oi": 0,
+                "bp": bid_price,
+                "ap": ask_price,
+                "s": daily_vol,
+                "bs": bid_volume,
+                "as": ask_volume,
+                "pc": prev_close,
+                "do": day_open,
+                "dh": day_high,
+                "dl": day_low
+            }
+            data_list.append(rtd)
+            data = json.dumps(data_list, separators=(',', ':'))
+
+            print(data, "\n", f"type: {type(data)}", f"length: {len(data)}")
 
     async def recv(self, websocket ):
-        try:
-            while( not self.stop_threads ):
-                try:
-                    async with asyncio.timeout(3):
-                        message = await websocket.recv()
-                        print(f"Message from websocket: {message}")
-                        try:
-                            json_message = json.loads( message )
-                            if 'cmd' in json_message:
-                                if 'arg' in json_message:
-                                    if json_message['cmd']=='bfall':
-                                        print( f"bfall cmd in {message}")
+            try:
+                while( not self.stop_threads ):
+                    try:
+                        async with asyncio.timeout(3):
+                            message = await websocket.recv()
+                            print(f"Message from websocket: {message}")
+                            try:
+                                json_message = json.loads( message )
+                                if 'cmd' in json_message:
+                                    if 'arg' in json_message:
+                                        if json_message['cmd']=='bfall':
+                                            print( f"bfall cmd in {message}")
 
-                                    elif json_message['cmd'] in ['bfauto', 'bffull']:
-                                        print("Bananas")
-                                        sym = json_message['arg'] if ' ' not in json_message['arg'] else (json_message['arg'].split(' '))[0]
-                                        json_message['arg'] = f"y {sym} 2" if json_message['cmd']=='bfauto' else f"y {sym} 5"
-                                        await self.get_historic_data(json_message)
-                                        json_message['sym'] = "addsym"
-                                        json_message['arg'] = sym
-                                        self.add_symbol(json_message)
+                                        elif json_message['cmd'] in ['bfauto', 'bffull']:
+                                            print("Bananas")
+                                            sym = json_message['arg'] if ' ' not in json_message['arg'] else (json_message['arg'].split(' '))[0]
+                                            json_message['arg'] = f"y {sym} 2" if json_message['cmd']=='bfauto' else f"y {sym} 5"
+                                            await self.get_historic_data(json_message)
+                                            json_message['sym'] = "addsym"
+                                            json_message['arg'] = sym
+                                            self.add_symbol(json_message)
 
-                                    elif json_message['cmd'] == 'bfsym':
-                                        print("Apples")
-                                        await self.get_historic_data(json_message)
+                                        elif json_message['cmd'] == 'bfsym':
+                                            print("Apples")
+                                            await self.get_historic_data(json_message)
+                                            self.add_symbol(json_message)
 
-                                    elif json_message['cmd'] == "addsym":
-                                        print("Pears") #This flow is when active sym is clicked in the context menu of the plugin
-                                        jr = self.add_symbol( json_message )
-                                        await self.broadcast( jr )
+                                        elif json_message['cmd'] == "addsym":
+                                            print("Pears") #This flow is when active sym is clicked in the context menu of the plugin
+                                            jr = self.add_symbol( json_message )
+                                            await self.broadcast( jr )
 
-                                    elif json_message['cmd'] == "remsym":
-                                        print("oranges")
-                                        jr = self.rem_symbol( json_message )
-                                        await self.broadcast( jr)
+                                        elif json_message['cmd'] == "remsym":
+                                            print("oranges")
+                                            jr = self.rem_symbol( json_message )
+                                            await self.broadcast( jr)
+
+                                        else:
+                                            print( f"unknown cmd in {message}")
 
                                     else:
-                                        print( f"unknown cmd in {message}")
+                                        print( f"arg not found in {message}")
 
                                 else:
-                                    print( f"arg not found in {message}")
+                                    print( f"json_message={message}")
 
-                            else:
-                                print( f"json_message={message}")
+                            except ValueError as e:
+                                print(f"Value error from {message}\n{e}")
 
-                        except ValueError as e:
-                            print(f"Value error from {message}\n{e}")
+                        if self.stop_threads:
+                            raise websockets.ConnectionClosed( None, None )
 
-                    if self.stop_threads:
-                        raise websockets.ConnectionClosed( None, None )
+                    except TimeoutError: pass
 
-                except TimeoutError: pass
+            except websockets.ConnectionClosed as wc:
+                print(f"Connection closed: {wc}")
+                if not self.keep_running:
+                    self.stop_threads = True
+            except Exception as e:
+                return repr(e)
+            return
 
-        except websockets.ConnectionClosed as wc:
-            print(f"Connection closed: {wc}")
-            if not self.keep_running:
-                self.stop_threads = True
-        except Exception as e:
-            return repr(e)
-        return
-
-
-    ## simulate subscribe
     def add_symbol(self, json_message):
         try:
             json_copy = copy.deepcopy(json_message)
@@ -263,130 +339,55 @@ class RTDServer(PubSub):
 
     def random_generator(self, l=1, u=9): return random.randint(l, u)
 
-
     async def broadcast_messages_count(self):
         try:
             while not self.stop_threads:
                 await asyncio.sleep(self.sleep_time)    #simulate ticks in seconds
-                t = 100000
-                d= 20250803
-                v1 = v2 = v3 = 0
-                s1 = s2 = s3 = 0
+
+                timestamp = (datetime.datetime.now().timestamp())
+                t = int(datetime.datetime.fromtimestamp(timestamp).strftime("%H%M%S"))
+                d= int(datetime.datetime.fromtimestamp(timestamp).strftime("%Y%m%d"))
+
                 ## Open intentionally kept random, SYM2 test bad symbol
-                #data = []
-                ##'n', 'd', 't', 'o', 'h', 'l', 'c', 'v', 'oi', 's','pc','bs','bp','as','ap' (s=total vol, pc=prev day close bs,bp,as,ap=bid ask )
-                self.random_generator = self.random_generator
-                data = [
-                        {
-                        "n": "SYM1",
+                data = []
+                ## make ticks for subscribed symbols
+
+                for asym in self.websocket_subscription_list:
+                    asym = asym.split()
+                    if len(asym) > 1:
+                        asym = asym[1]
+                    else:
+                        asym = asym[0]
+
+                    rec = {
+                        "n": asym,
                         "t":t,
                          "d":d,
-                         "c": self.random_generator(1, 9),
-                         "o": self.random_generator(1, 9),
-                         "h": 9,
-                         "l": 1,
-                         "v": v1,
+                         "c": self.random_generator(86300, 86500),
+                         "o": self.random_generator(85000, 86000),
+                         "h": 86500,
+                         "l": 86300,
+                         "v": 5,
                          "oi": 0,
-                         "bp": self.random_generator(1, 5),
-                         "ap": self.random_generator(5, 9),
-                         "s": s1,
+                         "bp": self.random_generator(86300, 86350),
+                         "ap": self.random_generator(86550, 86600),
+                         "s": 500,
                          "bs":1,
                          "as":1,
-                         "pc":1,
-                         "do":4,
-                         "dh":9,
-                         "dl":1
-                        },
-                    {"n": "", "t":t, "d":d, "c": self.random_generator(10, 19), "o": self.random_generator(10, 19), "h": 19, "l": 10, "v": v2, "oi": 0, "bp": self.random_generator(10, 15), "ap": self.random_generator(15, 19), "s": s2, "pc":10, "do":15, "dh":19, "dl":10},
-                    {"n": "SYM3", "t":t, "d":d, "c": self.random_generator(20, 29), "o": self.random_generator(20, 29), "h": 29, "l": 20, "v": v3, "oi": 0, "bp": self.random_generator(20, 25), "ap": self.random_generator(25, 29), "s": s3, "pc":22, "do":28, "dh":29, "dl":20}
-                ]
-
-                ## Random symbol generator code
-                k = 4
-                while k <= min(self.ticker_count, self.max_tickers):
-                    rec = {"n": "SYM"+str(k), "t":t, "d":d, "c": 18 + self.random_generator(), "o": 20 + self.random_generator(), "h": 40 - self.random_generator(), "l": 10 + self.random_generator(), "v": v1, "oi": 0, "bp": self.random_generator(1, 5), "ap": self.random_generator(5, 9), "s": s1, "bs":1, "as":1, "pc":1, "do":20, "dh":40, "dl":10}
-                    data.append( rec )
-                    k +=1
-
-                ## make ticks for subscribed symbols
-                for asym in self.websocket_subscription_list:
-                    rec = {"n": asym, "t":t, "d":d, "c": 18 + self.random_generator(), "o": 20 + self.random_generator(), "h": 40 - self.random_generator(), "l": 10 + self.random_generator(), "v": v1, "oi": 0, "bp": self.random_generator(1, 5), "ap": self.random_generator(5, 9), "s": s1, "bs":1, "as":1, "pc":1, "do":20, "dh":40, "dl":10}
+                         "pc":86222.5,
+                         "do":86222.5,
+                         "dh":86500,
+                         "dl":86350
+                        }
                     data.append( rec )
 
-                #print( json.dumps( data, separators=(',', ':')) )
-                await self.broadcast( json.dumps( data, separators=(',', ':')))  ## remove space else plugin will not match str
+                data = json.dumps(data, separators=(',', ':'))
+                print(data,"\n" ,f"type: {type(data)}", f"length: {len(data)}")
+                await self.broadcast(data)  ## remove space else plugin will not match str
 
         except asyncio.CancelledError:  #raised when asyncio receives SIGINT from KB_Interrupt
             print(f"asyncio tasks: send stop signal, wait for exit...")
             self.stop_threads = True
-            #try:
-            #    await asyncio.get_running_loop().shutdown_asyncgens()
-            #except RuntimeError: pass
-            try:
-                await asyncio.sleep( 3 )                          # these are not graceful exits.
-                await asyncio.get_running_loop().stop()           # unrecco = asyncio.get_event_loop().stop()
-            except: pass
-
-    async def broadcast_messages_count2(self):
-        try:
-            while not self.stop_threads:
-                await asyncio.sleep(self.sleep_time)    #simulate ticks in seconds
-                t = 100000
-                d= 20250803
-                v1 = v2 = v3 = 0
-                s1 = s2 = s3 = 0
-                """
-                ## Open intentionally kept random, SYM2 test bad symbol
-                #data = []
-                ##'n', 'd', 't', 'o', 'h', 'l', 'c', 'v', 'oi', 's','pc','bs','bp','as','ap' (s=total vol, pc=prev day close bs,bp,as,ap=bid ask )
-                self.random_generator = self.random_generator
-                data = [
-                        {
-                        "n": "SYM1",
-                        "t":t,
-                         "d":d,
-                         "c": self.random_generator(1, 9),
-                         "o": self.random_generator(1, 9),
-                         "h": 9,
-                         "l": 1,
-                         "v": v1,
-                         "oi": 0,
-                         "bp": self.random_generator(1, 5),
-                         "ap": self.random_generator(5, 9),
-                         "s": s1,
-                         "bs":1,
-                         "as":1,
-                         "pc":1,
-                         "do":4,
-                         "dh":9,
-                         "dl":1
-                        },
-                    {"n": "", "t":t, "d":d, "c": self.random_generator(10, 19), "o": self.random_generator(10, 19), "h": 19, "l": 10, "v": v2, "oi": 0, "bp": self.random_generator(10, 15), "ap": self.random_generator(15, 19), "s": s2, "pc":10, "do":15, "dh":19, "dl":10},
-                    {"n": "SYM3", "t":t, "d":d, "c": self.random_generator(20, 29), "o": self.random_generator(20, 29), "h": 29, "l": 20, "v": v3, "oi": 0, "bp": self.random_generator(20, 25), "ap": self.random_generator(25, 29), "s": s3, "pc":22, "do":28, "dh":29, "dl":20}
-                ]
-
-                ## Random symbol generator code
-                k = 4
-                while k <= min(self.ticker_count, self.max_tickers):
-                    rec = {"n": "SYM"+str(k), "t":t, "d":d, "c": 18 + self.random_generator(), "o": 20 + self.random_generator(), "h": 40 - self.random_generator(), "l": 10 + self.random_generator(), "v": v1, "oi": 0, "bp": self.random_generator(1, 5), "ap": self.random_generator(5, 9), "s": s1, "bs":1, "as":1, "pc":1, "do":20, "dh":40, "dl":10}
-                    data.append( rec )
-                    k +=1
-
-                ## make ticks for subscribed symbols
-                for asym in self.websocket_subscription_list:
-                    rec = {"n": asym, "t":t, "d":d, "c": 18 + self.random_generator(), "o": 20 + self.random_generator(), "h": 40 - self.random_generator(), "l": 10 + self.random_generator(), "v": v1, "oi": 0, "bp": self.random_generator(1, 5), "ap": self.random_generator(5, 9), "s": s1, "bs":1, "as":1, "pc":1, "do":20, "dh":40, "dl":10}
-                    data.append( rec )
-
-                #print( json.dumps( data, separators=(',', ':')) )
-                await self.broadcast( json.dumps( data, separators=(',', ':')))  ## remove space else plugin will not match str
-                """
-
-        except asyncio.CancelledError:  #raised when asyncio receives SIGINT from KB_Interrupt
-            print(f"asyncio tasks: send stop signal, wait for exit...")
-            self.stop_threads = True
-            #try:
-            #    await asyncio.get_running_loop().shutdown_asyncgens()
-            #except RuntimeError: pass
             try:
                 await asyncio.sleep( 3 )                          # these are not graceful exits.
                 await asyncio.get_running_loop().stop()           # unrecco = asyncio.get_event_loop().stop()
@@ -395,7 +396,7 @@ class RTDServer(PubSub):
     async def start_ws_server( self,aport ):
         print( f"Started RTD server: port={aport}, tf={self.timeframe}min, sym_count={self.ticker_count}, increment_sym={self.inc_sym}")
         async with websockets.serve(self.handler, "localhost", aport ):
-            await self.broadcast_messages_count2()
+            await self.broadcast_messages_count()
         return
 
     async def load_exchanges(self):
@@ -433,12 +434,15 @@ class RTDServer(PubSub):
     async def get_historic_data(self, json_message):
         #Todo logic to handle parsing of crypto vs non crypt data
         # Do soemthing like if not somesubstring found in exchangeList continue, etc
+        print(f"Fetching Data. Extracting symbol from message")
         if ' ' not in json_message['arg']:
             symbol_and_exchange = json_message['arg']
         else:
             argument = json_message['arg']
             symbol_and_exchange = argument.split(' ')[1]
-
+        print(f"Fetching Data for {symbol_and_exchange}")
+        exchange = None
+        symbol = None
         for exchange_name in self.exchange_instances.keys():
             if not exchange_name in symbol_and_exchange:
                 continue
