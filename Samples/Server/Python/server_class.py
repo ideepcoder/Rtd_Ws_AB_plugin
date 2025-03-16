@@ -152,6 +152,8 @@ class RTDServer(PubSub):
             symbol_and_exchange = symbol_and_exchange.split()
             if len(symbol_and_exchange) > 1:
                 symbol_and_exchange = symbol_and_exchange[1]
+            else:
+                symbol_and_exchange = symbol_and_exchange[0]
         except: pass
         print(f"Parsed value: {symbol_and_exchange}")
         symbol = None
@@ -235,9 +237,8 @@ class RTDServer(PubSub):
             }
             data_list.append(rtd)
             data = json.dumps(data_list, separators=(',', ':'))
-
             print(data, "\n", f"type: {type(data)}", f"length: {len(data)}")
-
+            #await self.broadcast(data)  ## remove space else plugin will not match str
     async def recv(self, websocket ):
             try:
                 while( not self.stop_threads ):
@@ -305,6 +306,7 @@ class RTDServer(PubSub):
         try:
             json_copy = copy.deepcopy(json_message)
             sym = json_copy['arg']
+            print(f"Sym: {sym}")
             if sym not in self.websocket_subscription_list:
                 self.websocket_subscription_list.append(sym)
                 symbol_and_exchange = sym
