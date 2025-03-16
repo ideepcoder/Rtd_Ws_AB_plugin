@@ -453,6 +453,7 @@ class RTDServer(PubSub):
 
     async def fetch_market_watchlists(self, name, exchange):
         print(f"Fetching market data for {name}...")
+        #todo implement properly watchlists
         try:
             watchlist = os.path.join(self.watchlists_path, name + self.watchlist_suffix)
             market = await exchange.fetch_markets()
