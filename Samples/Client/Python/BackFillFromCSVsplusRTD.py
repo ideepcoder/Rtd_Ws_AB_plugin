@@ -82,7 +82,7 @@ class RTDServer(PubSub):
             sleep_time = float(sys.argv[1])
             print(f'Frequency={sleep_time} secs')
         except:
-            sleep_time = 0.3
+            sleep_time = 0.9
             print(f'Frequency={sleep_time} secs')
 
         ''' Settings '''
@@ -461,10 +461,7 @@ class RTDServer(PubSub):
                 (df['active']==True) &
                 (df['type'] == "spot")
             ]
-            df_symlist = df_active['symbol'] + f"{name}"
-            for i in range(len(df_symlist)):
-                sym = df_symlist.iloc[0][i]
-                self.add_symbol_from_df()
+            df_symlist = (df_active['symbol']).upper().replace("/","-") + f".{name.lower()}"
             print(df_symlist.to_string())
             df_symlist.to_csv(watchlist,index = False, header=None, mode = "w")
             await exchange.close()
