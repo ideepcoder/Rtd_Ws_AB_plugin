@@ -290,42 +290,61 @@ class RTDServer(PubSub):
                                                         try:
                                                             backfill_length = int(command[2])
                                                             if backfill_length == 1:
-                                                                await self.get_historic_data(json_message)
+                                                                asyncio.create_task(
+                                                                    self.get_historic_data(json_message)
+                                                                )
                                                                 self.add_symbol(json_message)
                                                             elif backfill_length == 5:
                                                                 symbol_and_exchange = command[1]
                                                                 asyncio.create_task(self.exchange_data_from_file_backfill_crypto(symbol_and_exchange))
+                                                                self.add_symbol(json_message)
                                                         except Exception as e:
                                                             print(f"Exception: {e}")
+
                                                     except Exception as e:
                                                         print(f"Exception: {e}")
+
                                         elif "bfall" in json_message['cmd']:
                                             if "arg" in json_message:
                                                 if json_message['arg']=='x':
-                                                    asyncio.create_task(self.get_directory_contents_crypto())
+                                                    pass #todo handle this
 
                                         elif "bffull" in json_message['cmd']:
                                             symbol_and_exchange = (json_message['arg'])
-                                            #await self.exchange_data_from_file_backfill_crypto(symbol_and_exchange)
-                                            #await self.get_historic_data(json_message)
+                                            asyncio.create_task(
+                                                self.exchange_data_from_file_backfill_crypto(symbol_and_exchange)
+                                            )
+
 
                                         elif "bfauto" in json_message['cmd']:
-                                            print("Backfilling data since last data point for 1 symbol.For now just use the most recent call"
-                                                  "We will implement later. If there are data gaps, then tdo the full history data call.")
-                                            #await self.get_historic_data(json_message)
+                                            #todo implement properly
+                                            print("Backfilling data since last data point for 1 symbol."
+                                                  "For now just use the csv and most recent call"
+                                                  "We will implement later."
+                                                  )
+                                            symbol_and_exchange = (json_message['arg'])
+                                            asyncio.create_task(
+                                                self.exchange_data_from_file_backfill_crypto(symbol_and_exchange)
+                                            )
 
                                         elif "addsym" in json_message['cmd']:
                                             print("Subscribing to websocket")
-                                            await self.subscribe_to_exchange_websocket(json_message['arg'])
+                                            asyncio.create_task(
+                                                self.subscribe_to_exchange_websocket(json_message['arg'])
+                                            )
 
                                         elif "remsym" in json_message['cmd']:
                                             print ("Unsubscribing from websocket")
+                                            asyncio.create_task(
+                                                self.unsubscribe_from_exchange_websocket(json_message['arg'])
+                                            )
 
                                         else:
                                             print("Unknown command in message")
 
                                     else:
                                         print( f"json_message={message}")
+
                                     await asyncio.sleep(self.sleep_time)
 
                                 except ValueError as e:
@@ -478,6 +497,7 @@ class RTDServer(PubSub):
 
     async def exchange_data_call(self, symbol_and_exchange, exchange, symbol, timeframe):
         try:
+            symbol = symbol.replace("-", "/")
             print(f"Calling {timeframe} data for {symbol} from {exchange}")
             exchange = ccxtpro.binance()
             data = await exchange.fetch_ohlcv(
@@ -511,9 +531,10 @@ class RTDServer(PubSub):
             print(e)
 
 
-    async def exchange_data_call_return(self, symbol_and_exchange, exchange, symbol, timeframe):
+    async def exchange_data_call_return(self, exchange, symbol, timeframe):
         try:
             print(f"Calling {timeframe} data for {symbol} from {exchange}")
+            symbol = symbol.replace("-", "/")
             data = await exchange.fetch_ohlcv(
                                                 symbol=symbol,
                                                 timeframe = f"{timeframe}m",
@@ -542,27 +563,6 @@ class RTDServer(PubSub):
             print(e)
             return []
 
-
-    async def get_directory_contents_crypto(self):
-        pass
-        for directory in os.listdir(os.path.join(self.DataFiles_dir,"Crypto","ccxt")):
-            historic_data_dir = os.path.join(self.DataFiles_dir,"Crypto","ccxt",directory,"Historic")
-            file_list = os.listdir(historic_data_dir)
-            for file in file_list:
-                await asyncio.sleep(0.1)
-                full_path = os.path.join(historic_data_dir, file)
-                if not os.path.isfile(full_path):
-                    continue
-                else:
-                    symbol = (file.split(".csv")[0]).upper()
-                    exchange = directory.lower()
-                    symbol_and_exchange = symbol + exchange
-                    asyncio.create_task(self.exchange_data_from_file_backfill_crypto(symbol_and_exchange))
-                    self.watchlist.append(symbol_and_exchange)
-            df_watchlist = pd.DataFrame(self.watchlist)
-            self.watchlist = []
-            df_watchlist.to_csv(index = False, header = False)
-
     async def exchange_data_from_file_backfill_crypto(self, symbol_and_exchange):
         try:
             print(f"Fetching Data for {symbol_and_exchange} from backfill file")
@@ -578,9 +578,10 @@ class RTDServer(PubSub):
                     # CCXT prefers BTC/USDT etc
                     symbol = symbol_and_exchange.split(".")[0].upper()
                     break
-            #Handling large csv can take time so call exchange API to run in background
-            latest_bars = asyncio.create_task(self.exchange_data_call_return(symbol_and_exchange,exchange,symbol,self.timeframe))
 
+
+            symbol = symbol.replace("-","")
+            symbol = symbol.replace("/", "")
             full_path = os.path.join(self.DataFiles_dir,f"{symbol}.csv")
             async with aiofiles.open(full_path,mode="r") as f:
                 file_content = await f.read()
@@ -593,6 +594,8 @@ class RTDServer(PubSub):
                 [int(row[0]), int(row[1]), row[2], row[3], row[4], row[5], row[6], 0]
                 for row in df.itertuples(index=False, name=None)
             ]
+
+            latest_bars = await (self.exchange_data_call_return(exchange, symbol, self.timeframe))
             bars.extend(latest_bars)
             json_data = {
                 "hist": symbol_and_exchange,
