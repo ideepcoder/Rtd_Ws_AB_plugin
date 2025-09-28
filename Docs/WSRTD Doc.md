@@ -337,6 +337,31 @@ For samples, check 3.3 Plug-in return messages
 ```
 
 
+### 5) INFO format in json message
+This is a special json packet to populate the Symbol Information data in AB.
+*Note: Only some fields are implemented
+**ORDER** See the Json recommended section, info message has to start with "info" field. Subsequent order does not matter.
+**STRUCTURE** This is simple fields strings/int/float.
+
+> Refer ADK Struct StockInfo, ALL ARE OPTIONAL. Use relevant fields only.
+
+```sh
+'an' = AliasName		( type: char ), MAX_LENGTH = 47 
+'wi' = WebID			( type: char ), MAX_LENGTH = 47 
+'fn' = FullName 		( type: char ), MAX_LENGTH = 127 
+'ad' = Address	    	( type: char ), MAX_LENGTH = 127 
+'co' = Country		    ( type: char ), MAX_LENGTH = 63
+'cy' = Currency		    ( type: char ), ISO 3 letter currency code
+'im' = MarketID 		( type: integer )
+'ig' = GroupID		    ( type: integer )
+'ii' = IndustryID		( type: integer )
+'gc' = GICS			    ( type: integer ) 
+```
+>Sample info json
+```sh
+{"info":"SYM1","fn":"SYMBOL 1","an":"SYM1.NS","ad":"forum","co":"IN","cy":"INR","wi":"SYM1","im":0,"ig":0,"ig":0,"gc":0}
+```
+
 ### Important: Json string compression and format
 * Json message should be compressed removing all whitespaces or prettify.
 * Use your library Json Encoder to prevent errors.
@@ -348,6 +373,7 @@ C++ case-sensitive Raw string match example for performance
 R"([{"n")"     // Realtime Data
 R"({"cmd")"    // Commands
 R"({"hist")"   // Historical Data
+R"({"info")"   // Symbol Information
 ```
 
 ## Database Plug-in Commands
