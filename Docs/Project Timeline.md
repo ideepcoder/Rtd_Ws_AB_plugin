@@ -9,7 +9,7 @@ https://forum.amibroker.com/t/data-plugin-design-discussions/39303
 https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/Docs/WSRTD%20Doc.md
 ##### 20250101 - Added HTML Download version, better view vs MD file
 https://github.com/ideepcoder/Rtd_Ws_AB_plugin/tree/main/Docs/html%20download-light%20theme%20best%20view
-##### 20250109 - Opened WsRTD.dll for Alpha Test Release ( minimum 1-min base time )
+##### 20250109 - Opened WsRTD.dll for Alpha Test Release ( minimum 1-min base time ) - Version 3.01.05
 https://forum.amibroker.com/t/wsrtd-websocket-json-standard-data-plugin-test-release/39640
 ##### 20250110 - Added High Level Workflow
 https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/Docs/Workflow%20Overview.md
@@ -27,3 +27,8 @@ https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/Samples/Client/Python/v
 https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/Utility%20Scripts/Python/json_validator.py
 ##### 20250201 - Added Ping and AFL status function
 https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/Docs/WSRTD%20Doc.md#afl-access-functions
+##### 20250928 - Added New JSON structure "info" for Symbol Information - version 3.02.11
+https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/Docs/WSRTD%20Doc.md#5-info-format-in-json-message
+##### 20251010 - Added New JSON structure "ed" for Extra Data with custom user fieldnames - Version 3.03.16
+https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/Docs/WSRTD%20Doc.md#6-extra-Data-format-in-json-message
+ 

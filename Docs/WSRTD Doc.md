@@ -2,7 +2,7 @@
 ## _AmiBroker Realtime data plugin using Websocket and JSON based communication_
 
 [![Build Status](https://raw.githubusercontent.com/ideepcoder/Rtd_Ws_AB_plugin/84c47468847d2bbf53d2f12fa110d13c041d7b2d/images/unknown.svg)](https://github.com/ideepcoder/Rtd_Ws_AB_plugin)
-Doc version: 1.o, Plugin: 30014
+Doc version: 1.2, Plugin: 3.03.16
 ## Features
 - Bi-directional websocket communication
 - Support to backfill historical data
@@ -13,6 +13,7 @@ Doc version: 1.o, Plugin: 30014
 - Build your own data routing logic
 - Store your time-series data in the superfast Amibroker storage database
 - Get you Realtime Quote window ticking as opposed to plain ASCII imports
+- Supports updating Symbol Information, Extra Data and Fundamental data 
 
 # ✨ Upcoming  ✨
 - ArcticDB active integration
@@ -34,7 +35,7 @@ WS_RTD requires [AmiBroker] to run.
 | Visual C++ | VC++ 2022 redistributable |
 | Windows OS | Windows 10/11 x64-bit|
 | Linux OS| To-Do|
-|  Vanilla Python | [3,12 x64-bit](https://www.python.org/downloads/release/python-3120/)|
+|  Vanilla Python | [3,12 x64-bit](https://www.python.org/downloads/release/python-3120/) or higher|
 Install the above dependencies.
 Sample codes like sample_server.py requires additional python packages to be installed.
 
@@ -268,6 +269,15 @@ For ALL Symbol backfill, client application should still send individual Json-hi
 Get state if any Client-App is connected to the relay. Also, a ping-alive packet that wsrtd is connected to Relay server.
 
 
+##### g) Extra-Data request for Symbol
+{"cmd":"ed","arg":"SYMBOL_NAME"}
+```sh
+{"cmd":"ed","arg":"SYM1"}
+```
+Extra-Data json has been requested for the particular Symbol by the Plugin.
+User can return relevant json-ed. Look at Extra-Data Format for more information on allowed types.
+
+
 #### 3.2) Response CMD "to WS_RTD" Plug-in from Server
 
 ##### a) General acknowledgement response
@@ -339,8 +349,11 @@ For samples, check 3.3 Plug-in return messages
 
 ### 5) INFO format in json message
 This is a special json packet to populate the Symbol Information data in AB.
+
 *Note: Only some fields are implemented
+
 **ORDER** See the Json recommended section, info message has to start with "info" field. Subsequent order does not matter.
+
 **STRUCTURE** This is simple fields strings/int/float.
 
 > Refer ADK Struct StockInfo, ALL ARE OPTIONAL. Use relevant fields only.
@@ -362,6 +375,50 @@ This is a special json packet to populate the Symbol Information data in AB.
 {"info":"SYM1","fn":"SYMBOL 1","an":"SYM1.NS","ad":"forum","co":"IN","cy":"INR","wi":"SYM1","im":0,"ig":0,"ig":0,"gc":0}
 ```
 
+
+### 6) Extra Data format in json message
+A very effective json format that allows CUSTOM USER-DEFINED "FIELDNAMES" that can be accessed by AFL in AB.
+It implements the [GetExtraData("fieldname")](https://www.amibroker.com/guide/afl/getextradata.html) function in AB AFL, but allows more flexibilty based on the users need.
+The Data is not persistent, will need to be sent again if AB is restarted.
+
+**ORDER** See the Json recommended section, ExtraData message has to start with "ed" field. Subsequent order does not matter.
+
+**STRUCTURE** This is simple fields string, float, Array of numbers.
+
+> Refer AB manual, atleast one field is required.
+```sh
+The mapping is KEY:VALUE, and the same Case-sensitive Key should be called from AFL.
+The Data Type are only those supported in AFL.
+
+Arrays:
+1. In the case of Array, the BarCount size in AFL is used, and most recent BarCount values are returned if there is an overflow.
+2. Array values must be numeric, which can be cast to FLOAT, else they are converted to AFL NULL(-1e10f).
+3. Timeframe is not adjusted, the Array elements will be populated consecutively in the Array-TimeFrame requested by AFL.
+```
+>Sample Extra Data json
+```sh
+{"ed":"SYM1","Beta":1.2,"IssueType":"EQ","MyCustomArr1":[11,10.00,-12,9.2,-5,0,2]}
+```
+
+Related commands or FieldNames used in AFL, via GetExtraData()
+**CASE-SENSITIVE**
+```sh
+"ExtraDataStatus", "ExtraDataRequest", "CUSTOM_FIELDNAME"
+```
+
+1) ExtraDataStatus
+Returns Count of FieldNames for current Symbol, returns 0, if no fields exist.
+One can use this to check before request json-ed command via ExtraDataRequest.
+
+2) ExtraDataRequest
+Sends a json-ed request with current symbol to the CLIENT-APP.
+AFL can be used to request data when required.
+
+3) CUSTOM_FIELDNAME
+Pass the custom fieldname to access data and use in your AFL.
+If FieldName is not found, -1 is returned (float). 
+
+
 ### Important: Json string compression and format
 * Json message should be compressed removing all whitespaces or prettify.
 * Use your library Json Encoder to prevent errors.
@@ -373,7 +430,8 @@ C++ case-sensitive Raw string match example for performance
 R"([{"n")"     // Realtime Data
 R"({"cmd")"    // Commands
 R"({"hist")"   // Historical Data
-R"({"info")"   // Symbol Information
+R"({"info")"   // Symbol Information v3.02.11
+R"({"ed")"     // Extra Data v3.03.16
 ```
 
 ## Database Plug-in Commands
@@ -546,6 +604,17 @@ if Client App websocket is connected, Client App should implement "cping" cmd
 400 = running but remote disconnected
 -1 = ping sent, awaiting reply
 ```
+
+#### 3) "Custom FieldNames"
+Refer to the Extra Data section, plugin supports full custom data per symbol.
+
+#### 4) "AddSymSYMBOL_NAME"
+addsym cmd for a specific Symbol can be triggered from AFL. Useful when creating dynamic symbols.
+For example, Subscribe RTD for ATM options from current Spot price.
+
+#### 5) "RemSymSYMBOL_NAME"
+remsym cmd for a specific Symbol can be triggered from AFL. Useful to unsubscribe RTD symbols in CLIENT-APP.
+
 
 <here>
 
