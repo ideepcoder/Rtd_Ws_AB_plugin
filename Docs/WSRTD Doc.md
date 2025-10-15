@@ -403,20 +403,24 @@ Arrays:
 Related commands or FieldNames used in AFL, via GetExtraData()
 **CASE-SENSITIVE**
 ```sh
-"ExtraDataStatus", "ExtraDataRequest", "CUSTOM_FIELDNAME"
+"ExtraDataStatus", "ExtraDataFields", "ExtraDataRequest", "CUSTOM_FIELDNAME"
 ```
 
 1) ExtraDataStatus
-Returns Count of FieldNames for current Symbol, returns 0, if no fields exist.
+Returns Count of FieldNames for current Symbol, else returns 0, if no fields exist.
 One can use this to check before request json-ed command via ExtraDataRequest.
 
-2) ExtraDataRequest
+2) ExtraDataFields
+Returns a comma-separated string containing valid/available "FieldNames" for the symbol, else returns 0.
+It can be used in AFL to query valid FieldNames as each symbol supports custom extra data fields.
+
+3) ExtraDataRequest
 Sends a json-ed request with current symbol to the CLIENT-APP.
 AFL can be used to request data when required.
 
-3) CUSTOM_FIELDNAME
+4) CUSTOM_FIELDNAME
 Pass the custom fieldname to access data and use in your AFL.
-If FieldName is not found, -1 is returned (float). 
+If FieldName is not found, -1 is returned (float).
 
 
 ### Important: Json string compression and format
