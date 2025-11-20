@@ -31,4 +31,5 @@ https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/Docs/WSRTD%20Doc.md#afl
 https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/Docs/WSRTD%20Doc.md#5-info-format-in-json-message
 ##### 20251010 - Added New JSON structure "ed" for Extra Data with custom user fieldnames - Version 3.03.16
 https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/Docs/WSRTD%20Doc.md#6-extra-Data-format-in-json-message
- 
+##### 20251120 - Implemented Plugin State Persistence - Version 3.04.20
+https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/Docs/WSRTD%20Doc.md#13-What-do-i-need-to-know-about-plugin-state-persistence

@@ -2,7 +2,7 @@
 ## _AmiBroker Realtime data plugin using Websocket and JSON based communication_
 
 [![Build Status](https://raw.githubusercontent.com/ideepcoder/Rtd_Ws_AB_plugin/84c47468847d2bbf53d2f12fa110d13c041d7b2d/images/unknown.svg)](https://github.com/ideepcoder/Rtd_Ws_AB_plugin)
-Doc version: 1.2, Plugin: 3.03.16
+Doc version: 1.2, Plugin: 3.04.20
 ## Features
 - Bi-directional websocket communication
 - Support to backfill historical data
@@ -14,6 +14,7 @@ Doc version: 1.2, Plugin: 3.03.16
 - Store your time-series data in the superfast Amibroker storage database
 - Get you Realtime Quote window ticking as opposed to plain ASCII imports
 - Supports updating Symbol Information, Extra Data and Fundamental data 
+- Supports plugin state persistence, restores data between DB changes and AB restarts. v3.04.20
 
 # ✨ Upcoming  ✨
 - ArcticDB active integration
@@ -102,7 +103,7 @@ py sample_Server.py
 
 
 # JSON FORMATS
-There are 4 types: Json-RTD, Json-HIST, Json-CMD, Json-ACK
+There are various types: Json-RTD, Json-HIST, Json-CMD, Json-ACK, Json-INFO, Json-ED
 
 ### 1) RTD format in json message
 Currently, minimum periodicty/timeframe/interval of bars is 1 minute.
@@ -381,6 +382,8 @@ A very effective json format that allows CUSTOM USER-DEFINED "FIELDNAMES" that c
 It implements the [GetExtraData("fieldname")](https://www.amibroker.com/guide/afl/getextradata.html) function in AB AFL, but allows more flexibilty based on the users need.
 The Data is not persistent, will need to be sent again if AB is restarted.
 
+Individual fields are not updated, the entire string is replaced with the new json-ed packet.
+
 **ORDER** See the Json recommended section, ExtraData message has to start with "ed" field. Subsequent order does not matter.
 
 **STRUCTURE** This is simple fields string, float, Array of numbers.
@@ -403,32 +406,33 @@ Arrays:
 Related commands or FieldNames used in AFL, via GetExtraData()
 **CASE-SENSITIVE**
 ```sh
-"ExtraDataStatus", "ExtraDataFields", "ExtraDataRequest", "CUSTOM_FIELDNAME"
+"ExtraDataStatus", "ExtraDataFields", "ExtraDataRequest", "CUSTOM_FIELDNAME", 
+"AddSym". "RemSym", "NewReq"
 ```
 
-1) ExtraDataStatus
+1) ExtraDataStatus - 
 Returns Count of FieldNames for current Symbol, else returns 0, if no fields exist.
 One can use this to check before request json-ed command via ExtraDataRequest.
 
-2) ExtraDataFields
+2) ExtraDataFields - 
 Returns a comma-separated string containing valid/available "FieldNames" for the symbol, else returns 0.
 It can be used in AFL to query valid FieldNames as each symbol supports custom extra data fields.
 
-3) ExtraDataRequest
+3) ExtraDataRequest - 
 Sends a json-ed request with current symbol to the CLIENT-APP.
 AFL can be used to request data when required.
 
-4) CUSTOM_FIELDNAME
+4) CUSTOM_FIELDNAME - 
 Pass the custom fieldname to access data and use in your AFL.
 If FieldName is not found, -1 is returned (float).
 
 
-### Important: Json string compression and format
+## Important: JSON string compression and format
 * Json message should be compressed removing all whitespaces or prettify.
 * Use your library Json Encoder to prevent errors.
 For example, *The JSON standard requires double quotes and will not accept single quotes*
 * The json-type of messages are string matched at the start
-* Json CMD, history-format string and RTD fields are all **case-sensitive**
+* Json KEYS are all **case-sensitive**, unless specified otherwise
 ```sh
 C++ case-sensitive Raw string match example for performance
 R"([{"n")"     // Realtime Data
@@ -592,6 +596,55 @@ The status color will change to &#128994; from $${\color{ForestGreen}Dark \space
 #### 5) Settings change in Configure
 Kindly use DebugView to check if settings change requires an AB to be restarted or Plugin to be reconnect. Scroll up to Configure section and read the details.
 
+#### 6) Percentage change in RTQ(realtime-quote) window does not update? other columns are ok.
+You need to check and send the "pc" key in RTD, pc is previous close which is required to compute it.
+
+#### 7) I need to paginate HISTORICAL backfill for symbol(s), but data is inconsistent?
+While backfilling, most recent quotes are retained. For pagination or partial backfill, start from the oldest data and then supply newer ones.
+Many vendors restrict the number of bars fetched from server, so start with oldest batch and progressively send newer data.
+The plugin caches only 1 json-hist, so you need to run Explore on all those symbols before send history data again.
+Another option is to collect all the data in Client-App and then send it once to the plugin.
+Ensure DB settings has sufficient bars.
+
+#### 8) Older bars are getting overwritten or data is being lost?
+AB will store ONLY the number of maximum bars specified in DB settings. Adjust to suit your needs.
+
+#### 9) What is the Max number of Symbol Quotes in plugin settings window?
+Plugin is designed to be memory efficient. It retains or caches only the "n" most recent bars specified here.
+If you are running Analysis very frequently, you can reduce the number of bars to cache.
+The default is 200 bars, for a typical day of RTD in 1-min resolution.
+
+#### 10) Do you provide 32bit plugin?
+ALL AB versions are available in both 32bit/64bit, and the 32bit AB was mostly limited by older 32bit "only" plugins from vendors, or old OS.
+Since AB and WsRTD are both 64bit, you can leverage all the advantages of a 64bit Operating System like windows 10 or higher.
+
+#### 11) Client-App is receiving too many backfill requests?
+By design, the plugin websocket drop is interpreted as internet disconectivity or interuption.
+Ideally, you should use the RELAY Server model, where the server and AB can be up and connected for months without restarting.
+If you are frequently disconnecting either, plugin requests backfills as the completeness of current data state is not known.
+BFFULL and BFAUTO commands are sent only once on first use in AB, until any disconnection occurs that resets this flag.
+
+#### 12) "Chng" and "% Chng" in Realtime Quote window are not updating?
+You need to provide "pc", ie. previous-close price in the json-RTD packets.
+Similarly, you can send DH,DL,DO which refer to Day High, Day Low and Day open, used in RTQ window.
+
+#### 13) What do I need to know about Plugin State persistence?
+From v3.04.20, the plugin saves the plugin-DB state in binary format in the AB CWD.
+It is of the format "WsRTD_DBNAME_PLUGINVERSION.bin"
+State is reloaded only for same DB_NAME and PLUGIN_VERSION and Max_Quote_Size.
+This file is created automatically when AB is exited or AB-DB is changed.
+The file is read and loaded when the same DB in the CWD file is found.
+
+It just stores the RTD, backfill, Extra data, Recent_Info and Stock_Info related data.
+
+One drawback introduced, is bfauto is not re-sent because plugin detects existing RTD,
+so if you reload in live market, make sure to backfill.
+During closed market hours, it wont matter.
+
+Also, if you DELETE symbol in AB UI, make sure to send {"cmd":"dbremsym"..} to clear from plugin-DB,
+else this ticker will remain cached and use up Symbol_limit.
+
+
 
 ## AFL access functions
 ### using GetExtraData()
@@ -615,9 +668,29 @@ Refer to the Extra Data section, plugin supports full custom data per symbol.
 #### 4) "AddSymSYMBOL_NAME"
 addsym cmd for a specific Symbol can be triggered from AFL. Useful when creating dynamic symbols.
 For example, Subscribe RTD for ATM options from current Spot price.
+```sh
+GetExtraData("AddSymNEW_TICKER100");	// sends an "addsym" command for "NEW_TICKER100" to Client-App from AFL
+```
 
 #### 5) "RemSymSYMBOL_NAME"
 remsym cmd for a specific Symbol can be triggered from AFL. Useful to unsubscribe RTD symbols in CLIENT-APP.
+```sh
+GetExtraData("RemSymNEW_TICKER100");	// sends an "remsym" command for "NEW_TICKER100" to Client-App from AFL
+```
+
+#### 6) "NewReqCUSTOM_REQUEST"
+newreq is for "New Request", where a custom string can be sent to the server from AFL.
+Generally, AFL is not used to communicate with data plugin, but this is non-blocking and a method to communicate
+with the Client-App from AFL.
+Data received as "Extra Data" from Client-App can later be read and used in AFL.
+```sh
+GetExtraData("NewReqTICKER100,Buy,50,10");	// sends a "newreq" string as "TICKER100,Buy,50,10" to Client-App from AFL
+```
+AB has a more advanced Trading Interface, derived from BrokerIB(AB) called BrokerWS which is the documented way to deal
+with realtime order information.
+
+
+Note: Use AFL=>Static Variable guards around GetExtraData() & GetExtraDAtaForeign() to prevent multiple requests / processing which may be unnecessary.
 
 
 <here>
