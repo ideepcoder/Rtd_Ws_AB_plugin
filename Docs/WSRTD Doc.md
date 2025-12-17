@@ -16,7 +16,9 @@ Doc version: 1.2, Plugin: 3.04.20
 - Supports updating Symbol Information, Extra Data and Fundamental data 
 - Supports plugin state persistence, restores data between DB changes and AB restarts. v3.04.20
 
+
 # ✨ Upcoming  ✨
+- Check out the Upgrades section at the end for performance enhancements
 - ArcticDB active integration
 - A lot of leverage with keeping bloated data locally in ArcticDB and a concise Amibroker database
 
@@ -268,6 +270,7 @@ For ALL Symbol backfill, client application should still send individual Json-hi
 {"cmd":"cping","arg":""}
 ```
 Get state if any Client-App is connected to the relay. Also, a ping-alive packet that wsrtd is connected to Relay server.
+It is optional heartbeat packet that just says plugin is active in AB.
 
 
 ##### g) Extra-Data request for Symbol
@@ -644,6 +647,27 @@ During closed market hours, it wont matter.
 Also, if you DELETE symbol in AB UI, make sure to send {"cmd":"dbremsym"..} to clear from plugin-DB,
 else this ticker will remain cached and use up Symbol_limit.
 
+#### 14) Why the Sponsorware model?
+For over a year, I have been helping users with updating and improving the plugin.
+Also helped and continue helping with client-app code.
+Given the amount of time it takes, it is not viable to continue forever.
+
+The original plugin and all feature updates upto version 3.02.11 will be available for free as it is presently.
+No restrictions and users are free to evaluate or use for free forever.
+
+Newer versions will rely on sponsor/donate as I am not putting a fixed price.
+Because it is not only the plugin, but alot of client-app code that I help them with.
+None of the plugin uses https/remote server communication etc to keep privacy first, there is a small license file, that user send the code, it signed and sent back. (completely offline)
+Code is reviewed by AmiBroker Company. *applied, pending response
+
+I intend to continue supporting the AmiBroker community as best as I can.
+
+#### 15) I am upgrading my hardware, what about my License?
+Just get in touch, all sponsors are greatly valued and your issues will be sorted. 
+
+#### 16)
+ 
+
 
 
 ## AFL access functions
@@ -690,10 +714,15 @@ AB has a more advanced Trading Interface, derived from BrokerIB(AB) called Broke
 with realtime order information.
 
 
-Note: Use AFL=>Static Variable guards around GetExtraData() & GetExtraDAtaForeign() to prevent multiple requests / processing which may be unnecessary.
+Note: Use AFL=>Static Variable guards around GetExtraData() & GetExtraDataForeign() to prevent multiple requests / processing which may be unnecessary.
 
 
 <here>
+
+## Upgrades:
+- Version 3.04+ introduces a new network rewrite technique for JSON parsing that improves performance over the already fast original stack.
+- version 3.05+ introdues a robust, private, secure and offline usage model
+
 
 ## Development
 Want to contribute? Great!
