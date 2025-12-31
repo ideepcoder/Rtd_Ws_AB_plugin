@@ -2,7 +2,7 @@
 ## _AmiBroker Realtime data plugin using Websocket and JSON based communication_
 
 [![Build Status](https://raw.githubusercontent.com/ideepcoder/Rtd_Ws_AB_plugin/84c47468847d2bbf53d2f12fa110d13c041d7b2d/images/unknown.svg)](https://github.com/ideepcoder/Rtd_Ws_AB_plugin)
-Doc version: 1.2, Plugin: 3.04.20
+Doc version: 1.3, Plugin: 3.04.20
 ## Features
 - Bi-directional websocket communication
 - Support to backfill historical data
@@ -109,6 +109,7 @@ There are various types: Json-RTD, Json-HIST, Json-CMD, Json-ACK, Json-INFO, Jso
 
 ### 1) RTD format in json message
 Currently, minimum periodicty/timeframe/interval of bars is 1 minute.
+(Note: v3.05+ supports 1-second base time interval)
 Valid fields in the json object
 **ORDER** See the Json recommended section, rtd message has to start with "n" field. Subsequent order does not matter.
 **STRUCTURE** This is Array of JSON strings
@@ -160,7 +161,7 @@ Parse a history data JSON string that is used to backfill a Ticker
 format specifier is fieldsStr = "dtohlcvixy"
 only valid fields should be set and in that particular order.
 
- **ORDER** The sequence of columns in hostorical data can be anything set by the user, but it has to match its character in the Format specifier string. The beginning of the json message will start with "hist" containing Symbol name followed by "format" field containing the Format specifier string.
+ **ORDER** The sequence of columns in historical data can be anything set by the user, but it has to match its character in the Format specifier string. The beginning of the json message will start with "hist" containing Symbol name followed by "format" field containing the Format specifier string.
  
  **Important: History Array records must be in ascending order**, ie. Least DateTime first.
 ```sh
@@ -212,8 +213,11 @@ then, old_data + backfill_data + Rt_data ( from bars after last backfill bar, if
 
 [![img sample_server1](https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/images/help/Plugin_menu.png?raw=true)
 
-##### Backfill style-02 *To-do:*
-Inserting historical data into AmiBroker Database 
+##### Backfill style-02
+If your vendor restricts backfill length, then request oldest data chunks and progress to newer ones.
+Sending newer chunks first like in reverse order will, merge order will not guarantee correctness.
+Ensure AB calls the symbols before sending newer chunks.
+
 
 ### 3) CMD format in json message
 Work in progress, subject to change.
@@ -429,6 +433,10 @@ AFL can be used to request data when required.
 Pass the custom fieldname to access data and use in your AFL.
 If FieldName is not found, -1 is returned (float).
 
+5) NewReq<> = prefix for custom string payload
+
+*See the AFL access functions sections for detail usage.
+
 
 ## Important: JSON string compression and format
 * Json message should be compressed removing all whitespaces or prettify.
@@ -471,7 +479,7 @@ Batch command to log some Plug-in statistics.
 ##### 5) Clear First Access/Automatic backfill data
 For every first access of a symbol, bfauto or bffull request is sent once only. You can clear the flag with this.
 
-< Add more commands as required>
+
 
 ## Logging and troubleshooting
 #### 1) DebugView
@@ -595,6 +603,7 @@ When new symbols arrrive in the plugin-DB, the plugin status will be dark Green 
 [![Retrieve](https://raw.githubusercontent.com/ideepcoder/Rtd_Ws_AB_plugin/refs/heads/main/images/help/Retrieve.png)]
 
 The status color will change to &#128994; from $${\color{ForestGreen}Dark \space Green}$$
+Note: Symbols cannot be automatically added/removed or StockInfo updated without clicking RETRIEVE, this is by AB design.
 
 #### 5) Settings change in Configure
 Kindly use DebugView to check if settings change requires an AB to be restarted or Plugin to be reconnect. Scroll up to Configure section and read the details.
@@ -665,7 +674,12 @@ I intend to continue supporting the AmiBroker community as best as I can.
 #### 15) I am upgrading my hardware, what about my License?
 Just get in touch, all sponsors are greatly valued and your issues will be sorted. 
 
-#### 16)
+#### 16) LRU Manager usage
+This is an automatic Least Recently Used (LRU) symbol evictor from the plugin-DB. If MAx_LIMIT of PDB is reached, users without LRU enabled will get an orange Notify status and with it enabled, LRU drops older symbols for new ones.
+To improve Index rebuild rate which can be cpu consumning, currently an 8MIN window is used for re-indexing.
+You may have a look at it in the cpp source folder.
+
+####17)  
  
 
 
@@ -719,10 +733,14 @@ Note: Use AFL=>Static Variable guards around GetExtraData() & GetExtraDataForeig
 
 <here>
 
-## Upgrades:
+# Upgrades:
 - Version 3.04+ introduces a new network rewrite technique for JSON parsing that improves performance over the already fast original stack.
-- version 3.05+ introdues a robust, private, secure and offline usage model
+- Version 3.05+ introduces a robust, private, secure and offline usage model.
+- Version 3.05+ implements LRU, Least Recently Used Manager. In the event of max symbol limit hit, oldest symbols are automatically deleted in plugin DB.
+- Version 3.06+ implements sub 1-minute time interval, the lowest ie. 1-second.
 
+# Planned:
+- Version 3.07+ implements true tick-by-tick data support, including resolving multiple same timestamp trades & out-of-order ticks.
 
 ## Development
 Want to contribute? Great!
