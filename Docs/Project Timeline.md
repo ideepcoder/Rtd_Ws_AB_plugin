@@ -33,3 +33,8 @@ https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/Docs/WSRTD%20Doc.md#5-i
 https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/Docs/WSRTD%20Doc.md#6-extra-Data-format-in-json-message
 ##### 20251120 - Implemented Plugin State Persistence - Version 3.04.20
 https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/Docs/WSRTD%20Doc.md#13-What-do-i-need-to-know-about-plugin-state-persistence
+##### 20251215 - Implemented LRU Manager (Auto evict Least Recently Used symbol) - Version 3.05.23
+https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/Docs/WSRTD%20Doc.md#configure-the-plug-in
+##### 20260110 - Implemented EOD Mixed-Mode and Aggregate Partial Backfill - Version 3.06.26
+https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/Docs/WSRTD%20Doc.md#configure-the-plug-in
+

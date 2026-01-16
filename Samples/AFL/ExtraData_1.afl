@@ -1,0 +1,102 @@
+/*
+ # GetExtraData() and GetRTData() Example
+ 
+ #send from sample server
+ 
+ j1={"ed":"SYM3","ex1":"hello world","ex2":r(10,20)+0.25,"ex3":[1.1,2.3,5,-1,-3.2,0]}
+ 
+*/
+
+printf( "itv = %g\n", GetRTData( "TradeVolume" ) );
+printf( "ftv = %g\n", V[ BarCount-1 ] );
+
+printf( "\nExtraData example:\n\n" );
+
+// run once example
+varOnce 	= Name() + "_once";
+valueOnce 	= Nz( StaticVarGet( varOnce ), 0 );
+if( valueOnce == 0 ) {
+	StaticVarSet( varOnce, 1, False );
+	GetExtraData( "_AddSymTESTSYM1" );
+}
+
+
+// code runs conditionally only when new bar is detected
+lastBartime = LastValue( DateTime() );
+varName 	= Name() + "_lastdt";
+recordedTimestamp = Nz( StaticVarGet( varName ) );
+
+if( lastBarTime != recordedTimestamp ) {
+    StaticVarSet( varName, lastBartime, True );
+
+	/* your code here */
+	if( valueOnce == 1 ) {
+		StaticVarSet( varOnce, 2, False );
+		GetExtraData( "_RemSymTESTSYM1" );
+	}
+}
+
+edt = GetExtraData( "EdTime" ); printf( "edt = %.0f\n", edt );
+
+if( NOT IsNull( edt ) ) { 												// ticker has own Extra-Data
+
+	edd 	= GetExtraData( "EdDate" ); printf( "edd = %.0f\n", edd ); 	// if you want EdDate
+	
+	ED_DT32 = DateTimeConvert( 2, edd, edt );							// AFL DateTime is full proof comparison
+	
+	varEdTm = Name() + "_ED_Tm";
+	
+	ED_static = Nz( StaticVarGet( varEdTm ), 0 );
+	if( ED_DT32 > ED_static ) {
+		
+		StaticVarSet( varEdTm, ED_DT32, False );
+		
+		/* new data arrived in ED compared to AFL */
+		// Update AFL StaticVariables using GetExtraData() calls
+		
+		eds = GetExtraData( "EdStatus" ); printf( "eds = %g\n", eds );
+		StaticVarSet( Name() + "eds", eds, False );
+		
+		edf = GetExtraData( "EdFields" ); printf( "edf = %s\n", edf );
+		StaticVarSet( Name() + "edf", edf, False );
+		
+		ex2 = GetExtraData( "ex2" ); printf( "ex2 = %g\n", ex2 );
+		StaticVarSet( Name() + "ex2", ex2, False );
+
+		ex1 = GetExtraData( "ex1" );
+		if( typeof( ex1 ) == "string" )	printf( "ex1 = %s\n", ex1 );
+		StaticVarSet( Name() + "ex1", ex1, False );
+
+		ex3 = GetExtraData( "ex3" ); printf( "ex3 = %g,%g,%g\n", ex3[0], ex3[1], ex3[2] );
+		StaticVarSet( Name() + "ex3", ex3, False );
+		
+
+	}
+	else {
+		/* Dont lookup GetExtraData() */
+		// use data from AFL StaticVariables
+		
+		eds = StaticVarGet( Name() + "eds" ); printf( "eds = %g\n", eds );
+		
+		edf = StaticVarGet( Name() + "edf" );
+		if( typeof( edf ) == "string" )
+			printf( "edf %s\n", edf );
+		else
+			printf( "edf na\n" );
+		
+		ex2 = StaticVarGet( Name() + "ex2" ); printf( "ex2 = %g\n", ex2 );
+
+		ex1 = StaticVarGet( Name() + "ex1" );
+		if( typeof( ex1 ) == "string" )	printf( "ex1 = %s\n", ex1 );
+
+		ex3 = StaticVarGet( Name() + "ex3" );
+		if( typeof( ex3 ) == "array" ) 
+			printf( "ex3 = %g,%g,%g\n", ex3[0], ex3[1], ex3[2] );
+		else
+			printf( "ex3 na\n" );
+		
+	}
+
+}
+
+//GetExtraData( "_NewReqHelloWorld" );

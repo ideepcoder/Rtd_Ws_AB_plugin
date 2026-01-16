@@ -12,14 +12,14 @@
 // In the future, it will also serve to hook ArcticDB integration into the system.
 //
 ///////////////////////////////////////////////////////////////////////
-// Author: NSM51
+// Author: ideepcoder
 // https://github.com/ideepcoder/Rtd_Ws_AB_plugin/
 // https://forum.amibroker.com/u/nsm51/summary
 //
 // Users and possessors of this source code are hereby granted a nonexclusive, 
 // royalty-free copyright license to use this code in individual and commercial software.
 //
-// AUTHOR ( NSM51 ) MAKES NO REPRESENTATION ABOUT THE SUITABILITY OF THIS SOURCE CODE FOR ANY PURPOSE. 
+// AUTHOR ( ideepcoder ) MAKES NO REPRESENTATION ABOUT THE SUITABILITY OF THIS SOURCE CODE FOR ANY PURPOSE. 
 // IT IS PROVIDED "AS IS" WITHOUT EXPRESS OR IMPLIED WARRANTY OF ANY KIND. 
 // AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOURCE CODE, 
 // INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. 
@@ -44,24 +44,32 @@ import threading
 import datetime
 import sys
 
+## Globals ##
 stop_event   = 0
 stop_threads = False
 CLIENTS      = set()
 SENDERS      = set()
-ctr          = [0, 0, 0]    # counters: clients, senders, reserved
+ctr          = [0, 0, 0, 0]    # counters: clients, senders, reserved
 retCode      = 0
 
+
+'''Experimental Code for Trading Interface'''
+'''It is better to run TI on a separate port'''
+BROK_CLIENT = set()
+BROK_WS     = set()
 
 '''
 Function to iterate over all CLIENTS and broadcast message received from SENDER
 '''
-async def broadcast_c( message):
+async def broadcast_c( message ):
+    global CLIENTS
 
     Bad_WS = set()
 
     for websocket in CLIENTS:
         try:
             await websocket.send( message )
+
         except websockets.ConnectionClosed:                        Bad_WS.add( websocket ); continue
         except ConnectionResetError:                               Bad_WS.add( websocket ); continue
         except Exception as e: print(f"broadcast_C() {e}");        break
@@ -70,13 +78,15 @@ async def broadcast_c( message):
         for ws in Bad_WS:
             CLIENTS.remove( ws )
 
+    if len( CLIENTS ) < 1:  await broadcast_s( "NO_ACTIVE_CLIENTS" ); print("NO_ACTIVE_CLIENTS")
 
 
 '''
 Function to iterate over all SENDER(S) and broadcast message received from CLIENTS
 '''
-async def broadcast_s( message):
-
+async def broadcast_s( message ):
+    global SENDERS
+    
     Bad_WS = set()
 
     for websocket in SENDERS:
@@ -90,13 +100,15 @@ async def broadcast_s( message):
     if len( Bad_WS ) > 0:
         for ws in Bad_WS:
             SENDERS.remove( ws )
+        
+    if len( SENDERS ) < 1:  print("NO_ACTIVE_SENDERS")
 
 
 
 '''
 Main function that creates Handler for Each websocket connection (ie. Send() / Receive() functionality)
 '''
-async def handler(websocket):
+async def handler( websocket ):
     global stop_event, stop_threads, SENDERS, CLIENTS, ctr
     role = l_role = 0      ## local role
 
@@ -106,6 +118,11 @@ async def handler(websocket):
         if str(role).startswith('role'):
             if str(role).endswith('send'):  SENDERS.add( websocket); l_role = 1
             else:                           CLIENTS.add( websocket); l_role = 2
+
+        elif str(role).startswith('broker'):
+            if str(role).endswith('ws'):    BROK_WS.add( websocket);     l_role = 3
+            else:                           BROK_CLIENT.add( websocket); l_role = 4
+
     except: pass
 
     ## create periodic task:    ## disabled task to work as echo server. Client (fws) -> WS_server->Client C++
@@ -130,7 +147,7 @@ async def handler(websocket):
 '''
 Individual Role-Senders RECEIVE function as task, this message is BROADCAST to all CLIENTS
 '''
-async def senders_t( websocket):
+async def senders_t( websocket ):
     global stop_threads, stop_event
     while not stop_threads:
         try:
@@ -150,14 +167,14 @@ async def senders_t( websocket):
 '''
 Individual Role-Clients RECEIVE function as task, this message is BROADCAST to all SENDERS
 '''
-async def clients_t( websocket):
+async def clients_t( websocket ):
     global stop_threads, stop_event
     while not stop_threads:
         try:
             # this code is for normal recv, can use async as well for timeout           
             message = await websocket.recv()
             print(message)                          # print client msessages in server
-            await cmdMmessage( message)
+            await cmdMmessage( message )
 
         except TimeoutError:                                pass
         except websockets.ConnectionClosed:                 break
@@ -170,7 +187,7 @@ async def clients_t( websocket):
 '''
 utility function to parse CLIENTS commands / testing
 '''
-async def cmdMmessage(message):
+async def cmdMmessage( message ):
     global stop_threads, stop_event
     try:
         if message == "zzz":            ## just testing
@@ -197,7 +214,7 @@ async def stats():
 '''
 Websocket Server init.
 '''
-async def ws_start( stop):
+async def ws_start( stop ):
     global stop_event, wsport, retCode
     print(f"RTD Relay server started: {datetime.datetime.now()} on localhost:{wsport},\nctrl+c once to shutdown.")
     try:        
@@ -224,11 +241,11 @@ def main_S( lst=[] ):
 
     try:
         loop = asyncio.new_event_loop()
-        asyncio.set_event_loop( loop)
+        asyncio.set_event_loop( loop )
         stop_event = threading.Event()
         stop = loop.run_in_executor(None, stop_event.wait)
 
-        loop.run_until_complete( ws_start( stop))
+        loop.run_until_complete( ws_start( stop ))
         stop_threads = True; loop.stop(); loop.close()
 
     except Exception as e: print(f"main() Ex {e}"); stop_threads = True; stop_event.set(); loop.stop()
@@ -243,4 +260,4 @@ if __name__ == "__main__":
 
 
 ## Credits:
-## NSM51, Author.
+## ideepcoder, Author.

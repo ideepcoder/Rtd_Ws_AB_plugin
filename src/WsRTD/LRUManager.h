@@ -37,7 +37,7 @@ class LRUManager {
 
 private:
 
-    TickerMap& m_mapSym;
+    const TickerMap& m_mapSym;
 
     // main index: sorted by (date, key)
     std::set<LRUEntry, LRUEntryCmp> m_index;
