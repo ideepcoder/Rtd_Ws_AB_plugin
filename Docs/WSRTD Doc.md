@@ -2,7 +2,7 @@
 ## _AmiBroker Realtime data plugin using Websocket and JSON based communication_
 
 [![Build Status](https://raw.githubusercontent.com/ideepcoder/Rtd_Ws_AB_plugin/84c47468847d2bbf53d2f12fa110d13c041d7b2d/images/unknown.svg)](https://github.com/ideepcoder/Rtd_Ws_AB_plugin)
-Doc version: 1.3, Plugin: 3.04.20
+Doc version: 1.3, Plugin: 3.06.26
 ## Features
 - Bi-directional websocket communication
 - Support to backfill historical data
@@ -15,6 +15,11 @@ Doc version: 1.3, Plugin: 3.04.20
 - Get you Realtime Quote window ticking as opposed to plain ASCII imports
 - Supports updating Symbol Information, Extra Data and Fundamental data 
 - Supports plugin state persistence, restores data between DB changes and AB restarts. v3.04.20
+- LRU Manager, Least Recently Used symbols can be auto evicted. v3.05+
+- Supports lowest 1-second base time interval and higher
+- GetExtraData improvized for COMMUNICATION/Trading interface alongwith BrokerWS standalone
+- Mixed Mode Data support for RTD-Intraday and EOD historical data. Big enhancement! v3.06+
+- Aggregate Partial Backfill feature enhancement. v3.06+
 
 
 # ✨ Upcoming  ✨
@@ -23,7 +28,30 @@ Doc version: 1.3, Plugin: 3.04.20
 - A lot of leverage with keeping bloated data locally in ArcticDB and a concise Amibroker database
 
 
-### To-do: Table of Contents and Anchor links
+### Table of Contents and Anchor links
+| -  | Topic / Link | Description |
+| -  | ------ | ------ |
+| 01 | [Sponsorship](#14-why-the-sponsorware-model)| Appeal for a sustainable project |
+| 02 | [Installation](#installation) | How to configure/setup |
+| 03 | [Plugin Settings](#configure-the-plug-in) | Plugin settings explained in detail |
+| 04 | [RTD Format](#1-rtd-format-in-json-message) | RTD format in JSON structure |
+| 05 | [Backfill Format](#2-History-format-in-json-message) | Historical data format in JSON structure |
+| 06 | [CMD Format](#3-cmd-format-in-json-message) | Command format in JSON structure |
+| 07 | [ACK Format](#4-ack-format-in-json-message) | Acknowledge format in JSON structure |
+| 08 | [INFO Format](#5-info-format-in-json-message) | STOCK-INFO format in JSON structure |
+| 09 | [GetExtraData Format](#6-extra-data-format-in-json-message) | EXTRA-DATA for Fundamental, Trading interface, Custom indicators or Extra data |
+| 10 | [JSON Format begin note](#important-json-string-compression-and-format) | Important string matching & compression for JSON  |
+| 11 | [Plugin Commands](#database-plug-in-commands) | Using UI or AB Batch for plugin commands/control |
+| 12 | [Debugging](#logging-and-troubleshooting) | Logging and Troubleshooting |
+| 13 | [Backfill Styles](#backfill-style-01) | Performance note on various Backfill algorithms |
+| 14 | [WSRTD Settings storage ](#wsrtd-plugin-settings-storage) | Windows Registry usage for saving plugin settings |
+| 15 | [Client-App](#client-data-sender-application) | Client App role for Relay server |
+| 16 | [FAQs](#faqs) | Frequently asked questions - Must read |
+| 17 | [LRU](#16-lru-manager-usage) | Least Recently Used symbol automatic eviction |
+| 18 | [AFL Access](#afl-access-functions) | AFL Access functions to plugin |
+| 19 | [Upgrades](#upgrades) | Version wise Feature Upgrades/DevLog |
+| 20 | [Credits](#tech--credits) | Credits for other Authors and Contributors |
+| 21 | [Future Plans](#planned) | Exciting upgrades that are planned |
 
 
 ##### For DLL/Binary redistribution, kindly read the LICENSE section.
@@ -31,14 +59,14 @@ Doc version: 1.3, Plugin: 3.04.20
 
 ## Installation
 
-WS_RTD requires [AmiBroker] to run.
+WSRTD requires [AmiBroker] to run.
 | Software | Supported / Tested version |
 | ------ | ------ |
 | AmiBroker | v6.30+ x64-bit |
 | Visual C++ | VC++ 2022 redistributable |
-| Windows OS | Windows 10/11 x64-bit|
-| Linux OS| To-Do|
-|  Vanilla Python | [3,12 x64-bit](https://www.python.org/downloads/release/python-3120/) or higher|
+| Windows OS | Windows 10/11 x64-bit |
+| Linux OS| To-Do, untested |
+| Vanilla Python | [3,12 x64-bit](https://www.python.org/downloads/release/python-3120/) or higher |
 Install the above dependencies.
 Sample codes like sample_server.py requires additional python packages to be installed.
 
@@ -59,9 +87,9 @@ select Database folder
 Datasource: WsRtd data Plug-in
 Local data storage: ENABLE  (very important)
 set: Number of bars
-Base time interval: 1 minute or as suited
+Base time interval: 1 minute or as suited ( minimum 1-second v3.05+ )
 ```
-*To-Do: Enabling seconds(timeframe) in next iteration. Tick-data unsupported for now*
+*To-Do: Tick-data unsupported for now*
 
 [![img create](https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/images/help/DB_Create.png?raw=true)]
 
@@ -70,13 +98,26 @@ Base time interval: 1 minute or as suited
 Click Configure button
 ```
 
-[![img configure](https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/images/help/Plugin_Configure.png?raw=true)]
+[![img configure](https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/images/help/Plugin_Configure3.26.png?raw=true)]
 
-The internal plug-in DB stores RTD Quotes as a RING BUFFER. Max_Num_Sym_Quotes here means the number of bars to hold. If you run Analysis frequently and ensure all symbols are accessed, then you can set it as low as 10 to reduce memory usage. Each bar is 40 KB.
+- The internal plug-in DB stores RTD Quotes as a Fixed-Size BUFFER. Max_Num_Sym_Quotes here means the number of bars to hold(cache) "per symbol". If you run any Analysis frequently and ensure all symbols are accessed, then you can set it as low as 10 to reduce memory usage. Each bar is 40 KB.
+- Timer Interval: The frequency at which incoming json data is processed. Optimize depending on your CPU, but 300ms is sufficient.
+- CPing: When enabled, sends a periodic ~90s heartbeat message to CLIENT-APP
+- Auto-save Plugin DB: This feature enable state persistence between AB restarts. Plugin data like ExtraData, Symbol Map and Fundamental data are stored.
+- Auto-save pending BF: By default, pending backfill data is discarded when AB shuts down. This option allows to save backfill history not yet merged into AB DB.
+- Auto-del LRU: This enables LRU, Least Recently Used symbol eviction. When MAX_NUMBER_SYMBOLS is reached, oldest ticker is evicted if new one arrived.
+- EOD Mixed-Mode: This enables AB style mixed mode bars for EOD data. Read Backfill to understand more.
+- Merge Partial Backfill: Two backfill philosophies: when unchecked, only one or most recent json-hist is cached. If enabled, Client-App can send multiple packets in oldest to newest order and plugin will aggregate them. Read backfill section for details.
+- Save: Ensure to click, if any text or checkbox settings are changed.
+- Close: Exit Configure Dialog without saving any settings if changed.
+- Retrieve - The AB prescribed way to update or Add new symbols into AB DB.
+
 
 #### Important Settings change:
 1. **Max_Num_SYM_Quotes** : Requires AB restart
 2. ***Changes in IP / Port / AUTH** : Requires Plugin shutdown / connect, ie. Reconnect. 
+3. Toggling EOD Mode from on to off can lead to data corruption, as each EOD bar is inserted after all intraday bars of the same Date
+4. Merge partial backfill relies on SORTED Arrays, ensure to send oldest to newest data even though Internal path performs sorting and deduplication.
 
 ##### The Sample Server
 ensure these Python packages are installed and their dependencies
@@ -140,9 +181,9 @@ u, g and d are MUTUALLY EXCLUSIVE, but any one is mandatory.
 ```
 
 Refer to Amibroker ADK link above for data types.
-'d'.'t','as','bs' as integer,
+'d','t','as','bs' as integer,
 float is safe for the rest.
-To-do: unix timestamp(u/g), seconds interval
+To-do: unix timestamp(u/g), microseconds interval
 
 if required fields are not found, they are set to ZERO & that will distort candles.
 ```sh
@@ -164,6 +205,7 @@ only valid fields should be set and in that particular order.
  **ORDER** The sequence of columns in historical data can be anything set by the user, but it has to match its character in the Format specifier string. The beginning of the json message will start with "hist" containing Symbol name followed by "format" field containing the Format specifier string.
  
  **Important: History Array records must be in ascending order**, ie. Least DateTime first.
+ v3.06+ bring Mixed Mode, ie. "mixed intraday EOD/intraday" mode.
 ```sh
 (ugdt)ohlcvixy
 milliseconds not yet supprted
@@ -173,6 +215,7 @@ d = date                         ( type: integer )
 t = time                         ( type: integer )
 u, g and d are MUTUALLY EXCLUSIVE, but any one is mandatory.
 "t" is mandatory for intraday bars with "d"
+ONLY "d", omitting "t" ( V3.06+ mixed mode )
 
 o = open price        ( type: float ), required
 h = high price        ( type: float ), required
@@ -204,23 +247,38 @@ that is use ( windows struct tm = localtime() or tm = gmtime()
 
  
 ##### Backfill style-01
->Currently, Vendor backfill means N most recent days data
+Currently, Vendor backfill means N most recent days data
 so plugin also sets Bars from the first of this Array to the last bar
 the existing bars are overwritten, from first bar of hist.
 old_data + WS_data
 Now, backfill means old_data + backfill (upto last backfill)
 then, old_data + backfill_data + Rt_data ( from bars after last backfill bar, if any )
 
-[![img sample_server1](https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/images/help/Plugin_menu.png?raw=true)
+[![img sample_server1](https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/images/help/menu_activesym.png?raw=true)
 
 ##### Backfill style-02
 If your vendor restricts backfill length, then request oldest data chunks and progress to newer ones.
-Sending newer chunks first like in reverse order will, merge order will not guarantee correctness.
-Ensure AB calls the symbols before sending newer chunks.
+Sending newer chunks first like in reverse order will sort, deduplicate and merge but it is not cpu optimal.
+
+v3.06+ introduces Merge Partial Backfill option. You can send multiple json-hist that will be aggregated in Plugin DB BUT it is ascending timestamp order.
+That means like before, OLDEST data first progressively sending newer data.
+It is still wiser to keep a dummy AFL/Analysis Scan to ensure timely update to AB DB instead of storing in plugin DB.
+
+##### Mixed Mode v3.06+ Intraday + EOD
+Mixed mode allows supplying **both intraday and End-of-Day (EOD)** bars for the same ticker.
+This data cannot be supplied as RTD messages. One has to use backfill/json-hist as it is considered logical history.
+To maintain full backward compatibilty, nothing is changed, the format is mandatorily "d", like "dohlcv", optional: i,x,y 
+
+Be aware that some vendors may send today's daily EOD bar while ticker has RTD, this puts wrong EOD bar at the end. Be sure to skip this bar before forwarding data to plugin.
+
+NOTE: Backfill style-01 is relatively faster then MIXED-MODE OR MERGE_PARTIAL_BACKFILL mode. The merge algorithim is fast, 100K bars in 1ms on average 3GHz cpu, but it still requires bar by bar comparison.
+```sh
+{"hist":"SYM1","format":"dohlcv","bars":[...]}
+```
 
 
 ### 3) CMD format in json message
-Work in progress, subject to change.
+
 > ALL REQUESTS made by **plug-in TO** Server have only "cmd" and "arg fields"
 > Server should REPLY to all above REQUESTS with same "cmd" and "arg" fields. Additionally inserting the "code" which is integer.
 > Code values for OK=200 to 299, and OTHER/BAD=400 to 499. Specific codes are not defined yet.
@@ -286,7 +344,25 @@ Extra-Data json has been requested for the particular Symbol by the Plugin.
 User can return relevant json-ed. Look at Extra-Data Format for more information on allowed types.
 
 
-#### 3.2) Response CMD "to WS_RTD" Plug-in from Server
+##### h) EOD ALL symbol backfill
+{"cmd":"bfeodall","arg":"x"}
+```sh
+{"cmd":"bfeodall","arg":"x"}
+```
+Only if mixed-mode is enabled.
+For ALL Symbol backfill, client application should still send individual Json-hist messages for each symbol.
+
+
+##### i) EOD single symbol backfill
+{"cmd":"bfsymeod","arg":"reserved SYMBOL_NAME int_preset"}
+```sh
+{"cmd":"bfsymeod","arg":"y SYM1 1"}
+```
+Only if mixed-mode is enabled.
+int_preset is 1 or 2, signalling short or long duration that suits client-app.
+
+
+#### 3.2) Response CMD "to WSRTD" Plug-in from Server
 
 ##### a) General acknowledgement response
 {"cmd":"CMD_SENT","code":int_code,"arg":"response string"}
@@ -304,7 +380,7 @@ Mandatory code field
 ```
 
 
-#### 3.3) Request CMD "to WS_RTD" Plug-in "from" Server
+#### 3.3) Request CMD "to WSRTD" Plug-in "from" Server
 Mandatory code=300
 {"cmd":"request_cmd","code":300,"arg":"request_arg"}
 
@@ -324,8 +400,10 @@ returns {"ack","code":400,"arg":"SYM9 NOT found in DB")     /* failure */
 returns a comma-string of symbols
 ```sh
 {"cmd":"dbgetlist","code":300,"arg":"DB Symbol list requested at 14:56:00"}
-returns {"ack":"dbgetlist","code":200,"arg"="AA,AAPL,AXP,BA,C,CAT,IBM,INTC,"}
+returns {"ack":"dbgetlist","code":200,"arg"="AA,AAPL,AXP,BA,C,CAT,IBM,INTC"}
 ```
+v3.05+ returns unsorted list, maintains the insertion order from earliest to most recent.
+
 
 ##### c) Get the Base Time Interval of Plug-in Database
 {"cmd":"dbgetbase","code":300,"arg":""}
@@ -387,7 +465,8 @@ This is a special json packet to populate the Symbol Information data in AB.
 ### 6) Extra Data format in json message
 A very effective json format that allows CUSTOM USER-DEFINED "FIELDNAMES" that can be accessed by AFL in AB.
 It implements the [GetExtraData("fieldname")](https://www.amibroker.com/guide/afl/getextradata.html) function in AB AFL, but allows more flexibilty based on the users need.
-The Data is not persistent, will need to be sent again if AB is restarted.
+The Data is persistent "only" if auto-save is enabled.
+FieldNames starting with "_" underscore are reserved for plugin use. Do not prefix CUSTOM_FIELDNAMES with underscore.
 
 Individual fields are not updated, the entire string is replaced with the new json-ed packet.
 
@@ -413,30 +492,42 @@ Arrays:
 Related commands or FieldNames used in AFL, via GetExtraData()
 **CASE-SENSITIVE**
 ```sh
-"ExtraDataStatus", "ExtraDataFields", "ExtraDataRequest", "CUSTOM_FIELDNAME", 
-"AddSym". "RemSym", "NewReq"
+"EdDate", "EdTime", "EdStatus", "EdFields", "CUSTOM_FIELDNAME", 
+```
+Reserved Control commands are prefixed with underscore, they send json-cmd to Client-App:
+```sh
+"_AddSym". "_RemSym", "_NewReq", "_EdRequest", "_IsRtdConn", "_ClientStatus",
 ```
 
-1) ExtraDataStatus - 
+
+1) Date and Time - "EdDate" and "EdTime"
+returns float similar to DateNum() and TimeNum() or 0.
+This polling is fast, which gives the Last Update Time of ExtraData json.
+It prevents unnecessary lookups and you can cache your AFL data in StaticVariables.
+
+2) ExtraDataStatus - "EdStatus" 
 Returns Count of FieldNames for current Symbol, else returns 0, if no fields exist.
 One can use this to check before request json-ed command via ExtraDataRequest.
 
-2) ExtraDataFields - 
+3) ExtraDataFields - "EdFields"
 Returns a comma-separated string containing valid/available "FieldNames" for the symbol, else returns 0.
 It can be used in AFL to query valid FieldNames as each symbol supports custom extra data fields.
-
-3) ExtraDataRequest - 
-Sends a json-ed request with current symbol to the CLIENT-APP.
-AFL can be used to request data when required.
 
 4) CUSTOM_FIELDNAME - 
 Pass the custom fieldname to access data and use in your AFL.
 If FieldName is not found, -1 is returned (float).
 
-5) NewReq<> = prefix for custom string payload
+5) ExtraDataRequest - "_EdRequest"
+Sends a json-ed request with current symbol to the CLIENT-APP.
+AFL can be used to request data when required.
 
-*See the AFL access functions sections for detail usage.
+6) _NewReq<> = prefix for custom string payload
 
+*See the AFL access functions sections for detailed usage.
+
+
+Note: If you are using v3.02.11, the commands "do not" have underscore prefix.
+So use as "addsym", "remsym" and custom fields are not supported.
 
 ## Important: JSON string compression and format
 * Json message should be compressed removing all whitespaces or prettify.
@@ -483,7 +574,7 @@ For every first access of a symbol, bfauto or bffull request is sent once only. 
 
 ## Logging and troubleshooting
 #### 1) DebugView
-WS_RTD uses extensive logging using Windows Debug output.
+WSRTD uses extensive logging using Windows Debug output.
 - Just run [DebugView](https://learn.microsoft.com/en-us/sysinternals/downloads/debugview)
 - Set the Filter to "DBG" *(may change this string later)*
 - View realtime Plug-in related information here
@@ -493,7 +584,7 @@ WS_RTD uses extensive logging using Windows Debug output.
 #### 2) One or some symbols not updating
 Check under Symbol > Information window,
 ```sh
-Use only local database = No    (Ensure No, If yes, plug-in-cannot update it)
+Use only local database = No    (Ensure No, If yes, plug-in cannot update it)
 ```
 
 #### 3) View Count of bars that are in Plug-in DB and those that have been updated to Amibroker DB
@@ -510,7 +601,7 @@ Dividend: This column shows the Total count of bars in updated to AB from the Pl
 #### 4) AB Plug-in UI Commands: Connect and Shutdown
 These commands will only Connect or Disconnect the plug-in (Client Websocket) to the local relay server. Data stored in the Plug-in DB is not affected.
 AB Symbols will still get updated if there is fresh data in the plug-in DB while the user has disconnected the plug-in.
-The plug-in DB is not persistent, that means, if user Exits Amibroker or Changes the Current DB in Amibroker, only then the plug-in data is cleared.
+The plug-in DB is not persistent, that means, if user Exits AmiBroker or Changes the Current DB in Amibroker, only then the plug-in data is cleared.
 
 #### 5) Sample output of Configure settings
 ```sh
@@ -519,17 +610,17 @@ DBG: ConfDlg() RI=300ms, Conn=127.0.0.1:10101, SymLimit=1000, QuoteLimit=250, Db
 < more items to come >
 
 
-# WS_RTD Plugin Settings storage
-The plugin stores settings in the Windows Registry like Amibroker QT.dll
-Amibroker path
+# WSRTD Plugin Settings storage
+The plugin stores settings in the Windows Registry like other ADK plugins.
+AmiBroker path
 ```sh
-Computer\HKEY_CURRENT_USER\SOFTWARE\TJP\wsRtD
+Computer\HKEY_CURRENT_USER\SOFTWARE\TJP\WsRtD
 ```
 ```sh
-Nested in TJP\wsRtD\<Database_name>
+Nested in TJP\WsRtD\<Database_name>
 ```
 Settings will be UNIQUE to each unique database name created in AB.
-ALL Amibroker Databases that share common Database name but are different filesystem path will "still" share the same settings.
+ALL AmiBroker Databases that share common Database name but are different filesystem path will "still" share the same settings.
 This is the best of both, allows the user to separate or share settings as required.
 ```sh
 Example 1:
@@ -565,7 +656,7 @@ Example rolesend: data vendor / broker client program / Python sample server
 
 > Note: `--rolerecv` is required for client-receiver identification
 
-Example rolerecv: Ws_Rtd plugin or ArcticDB data collection socket conn
+Example rolerecv: WsRtd plugin or ArcticDB data collection socket conn
 
 Verify the connection by navigating to your terminal running the server
 
@@ -577,8 +668,18 @@ The design itself keeps in mind a minimal requirement so the application just ne
 - Client-Sender connects to the matching websocket port
 - On connection, it sends the above simple string "rolesend" before any other data
 - Then it follows the json-RTD format for realtime bars matching the interval set in AB configure DB
-- To handle Requests from Data Plug-in, it will receive the json-CMD or json-Hist. It should respond with the appropriate json formats described above. That's it.
+- To handle Requests from Data Plug-in, it will receive the various specified json-requests. It should respond with the appropriate json formats described above. That's it.
 - The Advantage of using a relay server is that when either Plug-ins or Client applications reconnect or disconnect, they don't cause the other party websocket drop errors which is distracting as well.
+
+#### 2) Building bars in Client-App 
+For improved performance, your data vendor gives you an SDK library.
+In python for example, use a Pandas table, like in the Client Class sample, and then perform snapshotting every 0.9sec or so.
+Basically, your RTD messages should be an array of all ticks in that second for all tickers that ticked.
+If you use 1-min timeframe as base, then you can use the logic to build 1-min bars from the same sample.
+
+Avoid 1-sec DB unless your strategies specifically require it, because AB tends to load the whole symbol data in RAM.
+Also, most vendors provide 10year data in 1-min, so it keeps your DB consistent.
+AB requires all bars to be only in the base time interval selected during DB creation.
 
 < more documentation on this later >
 The Programming Language of choice or platform does not in any way become restrictive to the user.
@@ -618,6 +719,9 @@ The plugin caches only 1 json-hist, so you need to run Explore on all those symb
 Another option is to collect all the data in Client-App and then send it once to the plugin.
 Ensure DB settings has sufficient bars.
 
+v3.06+ introduces Merge Partial Backfill option. You can send multiple json-hist that will be aggregated BUT it is ascending timestamp order.
+That means like before, OLDEST data first progressively sending newer data.
+
 #### 8) Older bars are getting overwritten or data is being lost?
 AB will store ONLY the number of maximum bars specified in DB settings. Adjust to suit your needs.
 
@@ -647,7 +751,7 @@ State is reloaded only for same DB_NAME and PLUGIN_VERSION and Max_Quote_Size.
 This file is created automatically when AB is exited or AB-DB is changed.
 The file is read and loaded when the same DB in the CWD file is found.
 
-It just stores the RTD, backfill, Extra data, Recent_Info and Stock_Info related data.
+It just stores the RTD, Backfill, Extra data, Recent_Info and Stock_Info related data.
 
 One drawback introduced, is bfauto is not re-sent because plugin detects existing RTD,
 so if you reload in live market, make sure to backfill.
@@ -656,17 +760,20 @@ During closed market hours, it wont matter.
 Also, if you DELETE symbol in AB UI, make sure to send {"cmd":"dbremsym"..} to clear from plugin-DB,
 else this ticker will remain cached and use up Symbol_limit.
 
+Pending Backfills, which means data in plugin-DB not yet merged with AB DB, is not saved in Auto-save by default.
+You can enable in UI settings, but be warned, this can introduce corruption if Merge Partial Backfill is also enabled.
+
 #### 14) Why the Sponsorware model?
 For over a year, I have been helping users with updating and improving the plugin.
 Also helped and continue helping with client-app code.
 Given the amount of time it takes, it is not viable to continue forever.
 
 The original plugin and all feature updates upto version 3.02.11 will be available for free as it is presently.
-No restrictions and users are free to evaluate or use for free forever.
+No restrictions and users are free to evaluate or use for free forever under NON-COMMERCIAL USAGE.
 
 Newer versions will rely on sponsor/donate as I am not putting a fixed price.
 Because it is not only the plugin, but alot of client-app code that I help them with.
-None of the plugin uses https/remote server communication etc to keep privacy first, there is a small license file, that user send the code, it signed and sent back. (completely offline)
+None of the plugin uses https/remote server communication etc to keep privacy first, there is a small license file, that user sends the code, it is signed and sent back. (completely offline)
 Code is reviewed by AmiBroker Company. *applied, pending response
 
 I intend to continue supporting the AmiBroker community as best as I can.
@@ -679,19 +786,29 @@ This is an automatic Least Recently Used (LRU) symbol evictor from the plugin-DB
 To improve Index rebuild rate which can be cpu consumning, currently an 8MIN window is used for re-indexing.
 You may have a look at it in the cpp source folder.
 
-####17)  
+#### 17) I want to clear Plugin-DB or Delete all entries of Ticker cache?
+From AB UI, ENSURE that plugin is SHUTDOWN, to enable menu entry for "DbRemSym ALL".
+This clears plugin cache without having to restart AB.
+For individual Ticker deletion, see DbRemSym json-cmd or the Active-Symbol menu item (when shutdown).
+Also, If State-Persistence is enabled, ensure to manually delete file from AB working directory else it will be re-imported at startup.
  
-
+#### 18) 
 
 
 ## AFL access functions
 ### using GetExtraData()
 https://www.amibroker.com/guide/afl/getextradata.html
 
-#### 1) "IsRtdConn"
+To fine tune the hotpath, underscore prefix is used to distinguish control commands vs faster plugin-memory lookups.
+bad key type, special return -2.0 as float in AFL
+
+Note: If you are using v3.02.11, the commands "do not" have underscore prefix.
+So use as "addsym" or "remsym". New commands and Custom_Fields are not supported in v3.02 or lower.
+
+#### 1) "_IsRtdConn"
 if Data plugin websocket is connected, 1 else 0
 
-#### 2) "ClientAppStatus"
+#### 2) "_ClientStatus"
 if Client App websocket is connected, Client App should implement "cping" cmd
 ```sh
 0 = client-app not running
@@ -702,42 +819,50 @@ if Client App websocket is connected, Client App should implement "cping" cmd
 
 #### 3) "Custom FieldNames"
 Refer to the Extra Data section, plugin supports full custom data per symbol.
+This is specifically a case-sensitive match.
 
-#### 4) "AddSymSYMBOL_NAME"
+#### 4) "_AddSymSYMBOL_NAME"
 addsym cmd for a specific Symbol can be triggered from AFL. Useful when creating dynamic symbols.
 For example, Subscribe RTD for ATM options from current Spot price.
 ```sh
-GetExtraData("AddSymNEW_TICKER100");	// sends an "addsym" command for "NEW_TICKER100" to Client-App from AFL
+GetExtraData("_AddSymNEW_TICKER100");	// sends an "addsym" command for "NEW_TICKER100" to Client-App from AFL
 ```
 
-#### 5) "RemSymSYMBOL_NAME"
+#### 5) "_RemSymSYMBOL_NAME"
 remsym cmd for a specific Symbol can be triggered from AFL. Useful to unsubscribe RTD symbols in CLIENT-APP.
 ```sh
-GetExtraData("RemSymNEW_TICKER100");	// sends an "remsym" command for "NEW_TICKER100" to Client-App from AFL
+GetExtraData("_RemSymNEW_TICKER100");	// sends a "remsym" command for "NEW_TICKER100" to Client-App from AFL
 ```
 
-#### 6) "NewReqCUSTOM_REQUEST"
+#### 6) "_NewReqCUSTOM_REQUEST"
 newreq is for "New Request", where a custom string can be sent to the server from AFL.
 Generally, AFL is not used to communicate with data plugin, but this is non-blocking and a method to communicate
 with the Client-App from AFL.
 Data received as "Extra Data" from Client-App can later be read and used in AFL.
 ```sh
-GetExtraData("NewReqTICKER100,Buy,50,10");	// sends a "newreq" string as "TICKER100,Buy,50,10" to Client-App from AFL
+GetExtraData("_NewReqTICKER100,Buy,50,10");	// sends a "newreq" string as "TICKER100,Buy,50,10" to Client-App from AFL
 ```
 AB has a more advanced Trading Interface, derived from BrokerIB(AB) called BrokerWS which is the documented way to deal
 with realtime order information.
 
 
 Note: Use AFL=>Static Variable guards around GetExtraData() & GetExtraDataForeign() to prevent multiple requests / processing which may be unnecessary.
-
+Also use "EdTime" and "EdDate" to query when last status was updated which is fast.
+[AFL sample for querying GetExtraData()](https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/Samples/AFL/ExtraData_1.afl)
 
 <here>
+
+## Plugin Menu options
+[![img sample_server1](https://github.com/ideepcoder/Rtd_Ws_AB_plugin/blob/main/images/help/plugin_main_menu.png?raw=true)
 
 # Upgrades:
 - Version 3.04+ introduces a new network rewrite technique for JSON parsing that improves performance over the already fast original stack.
 - Version 3.05+ introduces a robust, private, secure and offline usage model.
 - Version 3.05+ implements LRU, Least Recently Used Manager. In the event of max symbol limit hit, oldest symbols are automatically deleted in plugin DB.
 - Version 3.06+ implements sub 1-minute time interval, the lowest ie. 1-second.
+- Version 3.06+ implements AB Mixed Mode for both Intraday and Historical EOD data in same DB.
+- Version 3.06+ sorting and deduplication of timestamps for BackFill arrays if Either Mixed-mode OR Partial Backfill is enabled.(a bit more cpu usage)
+-
 
 # Planned:
 - Version 3.07+ implements true tick-by-tick data support, including resolving multiple same timestamp trades & out-of-order ticks.
@@ -750,7 +875,7 @@ Current Relay Server is python-based.
 Client-sender can be in a Programming Language of your choice or using Data Vendor library,
 these applications can be expanded greatly to encompass various Brokers APIs and Data Vendors.
 ##### B)
-WS_RTD uses C++ for development, strongly based on ATL/MFC, but is currently closed.
+WSRTD uses C++ for development, strongly based on ATL/MFC, but is currently closed.
 
 ## License
 **To be decided**

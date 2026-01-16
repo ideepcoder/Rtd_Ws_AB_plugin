@@ -1,3 +1,6 @@
 This plugin should be distributed or redisributed with the Documentation
 file provided in HTML that contains all the Licence information,
 Trademark, Copyright & Other notices.
+
+COMMERCIAL use of plugin or part of any bundle is prohibited without prior consent/agreement with project author(s).
+The plugin is intended for licensed AmiBroker users.

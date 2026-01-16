@@ -149,6 +149,12 @@ async def recv( websocket ):
                                     ##  jo = {"cmd":"bfsym", "arg":"y SYM1 3 1"}
                                     await broadcast( some_historical_data( jo ) )
                                     print( f"sent response\n{jo}" )
+                            
+                                elif jo['cmd'] == 'bfsymeod':
+                                    to = some_EOD_data( jo )
+                                    await broadcast( to )
+                                    print( f"sent response\n{jo}" )
+                                    #print( f"sent EOD data\n{to}" )
                                 
                                 elif jo['cmd'] == "addsym":
                                     jr = add_symbol( jo )
@@ -261,6 +267,36 @@ def some_historical_data( jo ):
                 
                 dt = dt + datetime.timedelta( minutes=tf )
                 j +=1
+            
+            dt = dt + datetime.timedelta( days=1 )
+            i += 1
+
+        return json.dumps( jsWs, separators=(',', ':') )    ## remove space else plugin will not match str
+    
+    except Exception as e:
+        return repr(e)
+
+
+def some_EOD_data( jo ):
+    '''simulate some EOD data'''
+
+    try:
+        t = jo['arg']
+        t = t.split(' ')        ## reserved1 symbol_name
+
+        jsWs = {'hist':t[1], 'format':"dohlcv"}
+        
+        ### Below is a dummy historical data generator  ###
+        jsWs['bars'] = []
+
+        bfdays      = int( 50 )   # days argument
+        dt          = datetime.datetime.now()
+        dt          = dt - datetime.timedelta( days=bfdays )
+
+        i  = 0
+        while i < bfdays:       # exclude today
+                
+            jsWs['bars'].append( [ int( dt.strftime('%Y%m%d') ), 20+r(),40-r(),10+r(),18+r(),100+r(100,500)] )
             
             dt = dt + datetime.timedelta( days=1 )
             i += 1
